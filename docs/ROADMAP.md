@@ -33,13 +33,13 @@ gantt
 ### Phase 2: Usable Multi-Language OSS (v0.2.0) — *Est: June 2026*
 *   **Target Deliverables:**
     1.  **Multi-Language AST Support:** Add tree-sitter static parsing configurations for TypeScript/JavaScript and Java.
-    2.  **Active File Boost:** Boost personalized weights dynamically for nodes belonging to files currently focused in active IDE windows.
-    3.  **Basic Semantic Resolution:** Resolve explicit cross-file imports and parameter type annotations to minimize graph connectivity gaps.
+    2.  **Real-time Active Tab Seeds:** Utilize the MCP protocol to automatically fetch active open files/tabs from modern IDEs (like Cursor) and use them as dynamic seed nodes to boost PPR scores on-the-fly without manual user input.
+    3.  **LSIF-Assisted Semantic Resolution:** Bridge AST's semantic blind spots at interface boundaries (especially in OOP languages like Java/TypeScript) by integrating lightweight Language Server Index Format (LSIF) dumping for robust type-resolution, merging it with AST's speed.
     4.  **Community Evaluation:** Benchmark GraphRAG-Code metrics on $\ge$ 5 real-world open-source repositories.
 
 ### Phase 3: Academic Ablation & Research Positioning (v0.3.0) — *Est: July 2026*
 *   **Target Deliverables:**
-    1.  **Ablation Study:** Conduct rigorous evaluations evaluating retrieval precision@k across weight distributions `0.0`, `0.5`, `0.7`, `1.0` for B-PPR.
+    1.  **Intent-based Dynamic Weighting & Ablation:** Transition from a static `backward_weight=0.7` to dynamic NLP-driven weighting. Prompts containing "blast radius/affect" will spike backward weights to 0.9, while "how it works/flow" will favor forward downstream traversal. This will be rigorously evaluated via an ablation study.
     2.  **Systematic Error Log:** Candidly document edge cases (e.g., dynamic imports, decorators) where structural indexing fails.
     3.  **Academic Preprint Draft:** Complete a 6–8 page research manuscript highlighting local-first ast-derived graph advantages over LLM-generated indexing.
 
