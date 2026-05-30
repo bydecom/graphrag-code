@@ -63,6 +63,30 @@ If you use **Cursor IDE** or **Claude Desktop**, GraphRAG-Code exposes standard 
 ## 🏗 Architecture
 The system utilizes `tree-sitter` to parse Python files into a graph of syntax nodes, stores it incrementally using SQLite, and loads it into a high-performance in-memory C-backed graph (`rustworkx`) to run PPR calculations in milliseconds.
 
+---
+
+## 🔍 Codebase Graph Visualization (Phase 2)
+
+<p align="center">
+  <img src="docs/assets/visualizer.png" alt="Codebase Knowledge Graph Visualizer" width="800"/>
+</p>
+
+**Color Legend (Node Types):**
+- 🟢 **Green (Ellipse):** `File / Module` (e.g., `main.py`)
+- 🔵 **Blue (Box):** `Class` (e.g., `FullScreenApp`, `AppMenu`)
+- ⚫ **Dark Grey (Box):** `Function / Method` (e.g., `__init__`, `create_widgets`)
+
+**How to generate and view this interactive graph locally:**
+```bash
+# Export the indexed SQLite graph to a JSON format
+graphrag-code-export --db graphrag_code.sqlite --out graph_data.json
+
+# Open the visualizer in your browser and upload the JSON file
+open examples/graph_visualizer.html
+```
+
+---
+
 ## ⚠️ Known Limitations
 - Currently, GraphRAG-Code natively supports Python codebases (multi-language support is planned for future releases).
 - **Latency overhead of ~20-25% on tiny codebases** (<20 files) due to MCP initialization and in-memory graph loading. This is compensated by massive performance gains and token savings on larger codebases.
