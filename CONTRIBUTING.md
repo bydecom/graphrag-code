@@ -1,6 +1,6 @@
-# Contributing to CodeGraph
+# Contributing to GraphRAG-Code
 
-Cảm ơn bạn đã quan tâm đóng góp vào CodeGraph Enterprise! Dưới đây là hướng dẫn nhanh để bắt đầu:
+Cảm ơn bạn đã quan tâm đóng góp vào GraphRAG-Code! Dưới đây là hướng dẫn nhanh để bắt đầu:
 
 ## 1. Môi trường Development
 Dự án yêu cầu Python 3.10+. Khuyên dùng `venv`:

@@ -1,3 +1,0 @@
-"""
-CodeGraph Enterprise Core Package
-"""

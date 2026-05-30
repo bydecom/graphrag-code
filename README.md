@@ -1,12 +1,12 @@
-# CodeGraph 🚀
+# GraphRAG-Code 🚀
 **Python-native Code Knowledge Graph using Bidirectional PPR**
 
 *An efficient approach to retrieve both upstream callers and downstream dependencies within a single query, extracting exact source code blocks rather than just metadata.*
 
-## Why CodeGraph? (The "Why")
+## Why GraphRAG-Code? (The "Why")
 
 In 2026, dumping entire raw files into LLM Agents is highly inefficient, leading to high token costs and increased hallucination rates.  
-CodeGraph solves this by combining **Abstract Syntax Tree (AST)** parsing with a **Bidirectional Personalized PageRank (B-PPR)** algorithm running on an optimized, in-memory graph.
+GraphRAG-Code solves this by combining **Abstract Syntax Tree (AST)** parsing with a **Bidirectional Personalized PageRank (B-PPR)** algorithm running on an optimized, in-memory graph.
 
 ```mermaid
 graph TD
@@ -43,19 +43,19 @@ To run the pipeline natively using Python 3.10+:
 pip install -e .
 
 # Parse the codebase and generate the Knowledge Graph
-codegraph-index --db codegraph.sqlite src
+graphrag-code-index --db graphrag_code.sqlite src
 
 # Set your LLM API Key (Gemini recommended)
 export GEMINI_API_KEY="your-api-key"
 
 # Launch the interactive Terminal Agent
-codegraph-agent
+graphrag-code-agent
 ```
 
 ---
 
 ## 📊 Native IDE Integration
-If you use **Cursor IDE** or **Claude Desktop**, CodeGraph exposes standard Model Context Protocol (MCP) tools out-of-the-box.  
+If you use **Cursor IDE** or **Claude Desktop**, GraphRAG-Code exposes standard Model Context Protocol (MCP) tools out-of-the-box.  
 👉 See detailed instructions in [docs/CURSOR_CLAUDE_INTEGRATION.md](docs/CURSOR_CLAUDE_INTEGRATION.md).
 
 ---
@@ -64,7 +64,7 @@ If you use **Cursor IDE** or **Claude Desktop**, CodeGraph exposes standard Mode
 The system utilizes `tree-sitter` to parse Python files into a graph of syntax nodes, stores it incrementally using SQLite, and loads it into a high-performance in-memory C-backed graph (`rustworkx`) to run PPR calculations in milliseconds.
 
 ## ⚠️ Known Limitations
-- Currently, CodeGraph natively supports Python codebases (multi-language support is planned for future releases).
+- Currently, GraphRAG-Code natively supports Python codebases (multi-language support is planned for future releases).
 - **Latency overhead of ~20-25% on tiny codebases** (<20 files) due to MCP initialization and in-memory graph loading. This is compensated by massive performance gains and token savings on larger codebases.
 - Heuristics for private methods (beginning with `_`) are undergoing active refinement.
 - Dynamic import, decorator, and metaclass analysis are not fully resolved at the AST syntax level without static type resolution.

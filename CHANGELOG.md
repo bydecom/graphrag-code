@@ -4,14 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [0.1.0] - 2026-05-31
 ### Added
-- **Core Engine**: `CodeGraphEngine` featuring a Bidirectional Personalized PageRank (B-PPR) algorithm to achieve up to 91% token savings.
+- **Core Engine**: `GraphRAG-CodeEngine` featuring a Bidirectional Personalized PageRank (B-PPR) algorithm to achieve up to 91% token savings.
 - **Indexer**: Incremental static parsing of Python codebase via `tree-sitter` and SQLite MD5 checksum tracking.
-- **MCP Server**: Implemented Anthropic's Model Context Protocol (`codegraph-mcp`) compatible with Cursor, Claude Desktop, and Aider.
-- **CLI Agent**: Out-of-the-box terminal interface (`codegraph-agent`) to chat directly with your codebase.
+- **MCP Server**: Implemented Anthropic's Model Context Protocol (`graphrag-code-mcp`) compatible with Cursor, Claude Desktop, and Aider.
+- **CLI Agent**: Out-of-the-box terminal interface (`graphrag-code-agent`) to chat directly with your codebase.
 - **Benchmark Suite**: Quantitative evaluation script assessing token savings, latency, and retrieval accuracy.
 
 ### Changed
-- Refactored the core project structure into a clean, packageable format (`codegraph-core`).
+- Refactored the core project structure into a clean, packageable format (`graphrag-code-core`).
 
 ### Fixed
 - Resolved infinite recursion loops when traversing deep cross-file dependencies.

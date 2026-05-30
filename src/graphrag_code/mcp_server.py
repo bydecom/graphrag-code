@@ -2,22 +2,22 @@ import os
 import logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 from mcp.server.fastmcp import FastMCP
-from codegraph.graph_engine import CodeGraphEngine
+from graphrag_code.graph_engine import GraphRAG-CodeEngine
 
 import importlib.metadata
 try:
-    __version__ = importlib.metadata.version("codegraph-core")
+    __version__ = importlib.metadata.version("graphrag-code-core")
 except importlib.metadata.PackageNotFoundError:
     __version__ = "0.1.0"
 
 # Khởi tạo MCP Server với tên định danh không hardcode version
-mcp = FastMCP(f"CodeGraph_Enterprise_v{__version__}")
+mcp = FastMCP(f"GraphRAG-Code_v{__version__}")
 
 # Khởi tạo The Brain (Load in-memory graph sẵn vào RAM ở O(|V| + |E|))
 # Đảm bảo Graph luôn "hot" để Agent gọi là có kết quả ngay
-db_file = os.environ.get("CODEGRAPH_DB", "codegraph.sqlite")
+db_file = os.environ.get("CODEGRAPH_DB", "graphrag_code.sqlite")
 try:
-    engine = CodeGraphEngine(db_file)
+    engine = GraphRAG-CodeEngine(db_file)
     engine.load_graph()
 except FileNotFoundError as e:
     logging.warning(f"⚠️ [WARNING] Server khởi động ở chế độ chờ. Chưa tìm thấy DB '{db_file}'. Cần chạy indexer trước.")
@@ -150,7 +150,7 @@ def list_symbols(file_path: str = "") -> str:
 
 def main():
     # Chạy MCP Server qua stdio (Standard I/O) - Giao thức chuẩn cho AI Agents
-    logging.info("\n[⚡] MCP Server 'CodeGraph' đang chạy và lắng nghe Agent...")
+    logging.info("\n[⚡] MCP Server 'GraphRAG-Code' đang chạy và lắng nghe Agent...")
     mcp.run(transport='stdio')
 
 if __name__ == "__main__":

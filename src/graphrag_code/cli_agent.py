@@ -14,22 +14,22 @@ async def run_cli_agent():
         print("    Trong Powershell: $env:GEMINI_API_KEY=\"AIzaSy...\"")
         return
         
-    print("[🤖 CodeGraph Agent] Đang khởi động 'The People's Agent'...")
+    print("[🤖 GraphRAG-Code Agent] Đang khởi động 'The People's Agent'...")
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
-    env["CODEGRAPH_DB"] = "codegraph.sqlite"
+    env["CODEGRAPH_DB"] = "graphrag_code.sqlite"
 
     server_params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "codegraph.mcp_server"],
+        args=["-m", "graphrag_code.mcp_server"],
         env=env
     )
 
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            print("[🤖 CodeGraph Agent] Đã kết nối MCP Server thành công!")
+            print("[🤖 GraphRAG-Code Agent] Đã kết nối MCP Server thành công!")
             
             # 1. Trích xuất Schema tự động từ MCP Server
             mcp_tools = await session.list_tools()

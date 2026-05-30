@@ -6,7 +6,7 @@ import os
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser, Query, QueryCursor
 
-def init_db(db_path="codegraph.sqlite"):
+def init_db(db_path="graphrag_code.sqlite"):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     # 1. Bảng quản lý File
@@ -238,7 +238,7 @@ def scan_directory(directory_path, conn):
 def main():
     cli_parser = argparse.ArgumentParser(description="Codebase Knowledge Graph Indexer")
     cli_parser.add_argument("target_path", nargs="?", default="sample_app.py", help="Đường dẫn tới file hoặc thư mục cần parse (mặc định: sample_app.py)")
-    cli_parser.add_argument("--db", default="codegraph.sqlite", help="Đường dẫn tới file SQLite (mặc định: codegraph.sqlite)")
+    cli_parser.add_argument("--db", default="graphrag_code.sqlite", help="Đường dẫn tới file SQLite (mặc định: graphrag_code.sqlite)")
     args = cli_parser.parse_args()
 
     logging.info(f"Khởi tạo database: {args.db}")

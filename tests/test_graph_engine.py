@@ -6,8 +6,8 @@ import sys
 # Đưa path của src vào
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
-from codegraph.indexer import init_db
-from codegraph.graph_engine import CodeGraphEngine
+from graphrag_code.indexer import init_db
+from graphrag_code.graph_engine import GraphRAG-CodeEngine
 
 class TestGraphEngine(unittest.TestCase):
     def setUp(self):
@@ -51,20 +51,20 @@ class TestGraphEngine(unittest.TestCase):
 
     def test_load_graph_success(self):
         """Kiểm tra Graph Engine nạp SQLite thành công vào in-memory rustworkx"""
-        engine = CodeGraphEngine(self.db_path)
+        engine = GraphRAG-CodeEngine(self.db_path)
         engine.load_graph()
         self.assertEqual(engine.graph.num_nodes(), 3)
         self.assertEqual(engine.graph.num_edges(), 2)
 
     def test_db_not_found_exception(self):
         """Kiểm tra Robustness: Quăng lỗi FileNotFoundError nếu DB thiếu"""
-        engine = CodeGraphEngine("non_existent_fake_db.sqlite")
+        engine = GraphRAG-CodeEngine("non_existent_fake_db.sqlite")
         with self.assertRaises(FileNotFoundError):
             engine.load_graph()
 
     def test_bidirectional_ppr(self):
         """Kiểm tra thuật toán Bidirectional Personalized PageRank"""
-        engine = CodeGraphEngine(self.db_path)
+        engine = GraphRAG-CodeEngine(self.db_path)
         engine.load_graph()
         
         # Chạy PPR với HelperUtils
@@ -78,7 +78,7 @@ class TestGraphEngine(unittest.TestCase):
 
     def test_interface_expansion(self):
         """Kiểm tra logic P0-2: Mở rộng cụm Seed nếu chạm vào Interface"""
-        engine = CodeGraphEngine(self.db_path)
+        engine = GraphRAG-CodeEngine(self.db_path)
         engine.load_graph()
         
         # Tìm ID của HelperUtils
