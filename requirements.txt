@@ -1,0 +1,6 @@
+tree-sitter>=0.23.2
+tree-sitter-python>=0.23.6
+rustworkx>=0.17.1
+mcp>=1.27.2
+litellm>=1.81.10
+python-dotenv>=1.2.2

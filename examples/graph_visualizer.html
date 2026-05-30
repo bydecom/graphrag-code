@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Enterprise CodeGraph Visualizer</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1e1e1e;
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #mynetwork {
+            width: 100%;
+            height: 85vh;
+            border: 1px solid #444;
+            border-radius: 8px;
+            background-color: #252526;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            background-color: #007acc;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        .btn:hover {
+            background-color: #005999;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <h2>🧠 Codebase Knowledge Graph (Phase 2)</h2>
+        <div>
+            <label for="fileInput" class="btn">📂 Upload graph_data.json</label>
+            <input type="file" id="fileInput" accept=".json" style="display:none;" />
+        </div>
+    </div>
+    <div id="mynetwork"></div>
+
+    <script type="text/javascript">
+        // Màu sắc chuẩn mực Enterprise
+        const options = {
+            nodes: {
+                shape: 'box',
+                margin: 10,
+                font: { color: '#ffffff', face: 'Segoe UI', size: 14 }
+            },
+            groups: {
+                module: { color: { background: '#2e7d32', border: '#1b5e20' }, shape: 'ellipse' },
+                class: { color: { background: '#1565c0', border: '#0d47a1' } },
+                function: { color: { background: '#424242', border: '#212121' } }
+            },
+            edges: {
+                smooth: { type: 'cubicBezier', forceDirection: 'none', roundness: 0.4 },
+                font: { color: '#aaaaaa', size: 10, align: 'middle' }
+            },
+            physics: {
+                forceAtlas2Based: { gravitationalConstant: -100, centralGravity: 0.01, springLength: 150, springConstant: 0.08 },
+                maxVelocity: 50,
+                solver: 'forceAtlas2Based',
+                timestep: 0.35,
+                stabilization: { iterations: 150 }
+            }
+        };
+
+        const container = document.getElementById('mynetwork');
+        let network = new vis.Network(container, {}, options);
+
+        document.getElementById('fileInput').addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const data = JSON.parse(e.target.result);
+                network.setData({
+                    nodes: new vis.DataSet(data.nodes),
+                    edges: new vis.DataSet(data.edges)
+                });
+            };
+            reader.readAsText(file);
+        });
+    </script>
+</body>
+
+</html>
