@@ -1,4 +1,4 @@
-# CodeGraph Enterprise 🚀
+# CodeGraph 🚀
 **Python-native Code Knowledge Graph với thuật toán Bidirectional PPR**
 
 *Một phương pháp hiệu quả để tìm cả upstream callers lẫn downstream dependencies trong một query, kết hợp Bidirectional PPR để trích xuất source code snippet thật thay vì chỉ metadata.*
@@ -21,7 +21,7 @@ CodeGraph giải quyết bài toán này bằng cách kết hợp **Abstract Syn
 - **Bidirectional PPR Merge:** Một kỹ thuật học thuật mở rộng (extend) từ dòng nghiên cứu Repo Map, kết hợp Forward PPR và Backward PPR (trên Reversed Graph) với weight=0.7 để tìm cả Blast Radius và Implementation Context trong 1 query duy nhất.
 - **Source Code Extraction:** Bơm trực tiếp code thật (snippet) vào LLM thay vì chỉ ném metadata.
 - **Interface Expansion (P0-2):** Tự động truy xuất các siblings và parent class thông qua keyword `extends`.
-- **Python-Native:** Best-in-class cho hệ sinh thái Python (FastAPI, Django, Data Science).
+- **Python-Native:** Tối ưu hóa cho hệ sinh thái Python (FastAPI, Django, Data Science).
 - **Zero-Ops MCP Server:** Chuẩn giao thức Model Context Protocol. Cắm thẳng vào **Cursor** hoặc **Claude Desktop** trong 3 giây.
 
 ---
@@ -56,7 +56,7 @@ Nếu bạn là tín đồ của **Cursor IDE** hoặc **Claude Desktop**, CodeG
 Hệ thống sử dụng `tree-sitter` để bóc tách codebase Python thành một mạng lưới đỉnh/cạnh, sau đó nạp vào bộ nhớ RAM bằng thư viện lõi C-backend `rustworkx` để tăng tốc độ chạy thuật toán.
 
 ## ⚠️ Known Limitations (Sự Thật Về Hệ Thống)
-- Hiện tại CodeGraph Enterprise chỉ hỗ trợ hệ sinh thái Python (Multi-language là Roadmap cho các phiên bản tiếp theo).
+- Hiện tại CodeGraph chỉ hỗ trợ hệ sinh thái Python (Multi-language là Roadmap cho các phiên bản tiếp theo).
 - **Latency overhead ~20-25% ở codebase nhỏ** (< 20 files). Việc này là do chi phí khởi động MCP Server và nạp In-memory Graph. Tuy nhiên, nó sẽ phát huy sức mạnh vượt trội và đảo chiều ở các codebase khổng lồ.
 - Thuật toán **PPR Seed Resolution** đối với các hàm nội bộ (private methods bắt đầu bằng `_`) đôi khi cần độ chính xác cao hơn, đang được nhóm phát triển tinh chỉnh.
 - Chưa có tính năng Community Detection (Leiden algorithm) để gom cụm module lớn (Planned cho V2).

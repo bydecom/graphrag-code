@@ -1,7 +1,8 @@
 import sqlite3
 import rustworkx as rx
 import os
-
+import logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 class CodeGraphEngine:
     def __init__(self, db_path="codegraph.sqlite"):
         self.db_path = db_path
@@ -77,7 +78,7 @@ class CodeGraphEngine:
         
         conn.close()
         
-        print(f"[-] Đã nạp thành công Graph: {self.graph.num_nodes()} Nodes, {self.graph.num_edges()} Edges (+ reversed graph).")
+        logging.info(f"[-] Đã nạp thành công Graph: {self.graph.num_nodes()} Nodes, {self.graph.num_edges()} Edges (+ reversed graph).")
 
     def _extract_source_code(self, file_path, start_line, end_line):
         """Hàm nội bộ: Đọc file và cắt đúng đoạn code cần thiết O(1) I/O"""
@@ -141,16 +142,16 @@ class CodeGraphEngine:
                 break
                 
         if seed_idx is None:
-            print(f"[!] Không tìm thấy symbol '{seed_name}' trong Graph.")
+            logging.warning(f"[!] Không tìm thấy symbol '{seed_name}' trong Graph.")
             return []
 
-        print(f"\n[🚀] Khởi động Bidirectional PPR từ Seed: '{seed_name}'")
+        logging.info(f"\n[🚀] Khởi động Bidirectional PPR từ Seed: '{seed_name}'")
 
         # Mở rộng seeds nếu chạm vào Interface (P0-2)
         expanded_seeds = self._get_expanded_seeds(seed_idx)
         if len(expanded_seeds) > 1:
             names = [self.rx_idx_to_symbol_info[idx]["name"] for idx in expanded_seeds]
-            print(f"  [+] Interface Expansion kích hoạt! Nhóm seeds: {names}")
+            logging.info(f"  [+] Interface Expansion kích hoạt! Nhóm seeds: {names}")
 
         # Cấu hình mảng Personalization: Ép năng lượng tập trung vào cụm Seed Nodes
         personalization = {n: 0.0 for n in self.graph.node_indices()}
@@ -225,6 +226,6 @@ if __name__ == "__main__":
     
     context = engine.get_context_ppr(seed_name=seed_node, top_k=10)
     
-    print(f"\n=== PRUNED CONTEXT CHO '{seed_node}' ===")
+    logging.info(f"\n=== PRUNED CONTEXT CHO '{seed_node}' ===")
     for rank, item in enumerate(context, 1):
-        print(f"#{rank} | Điểm: {item['score']} | {item['kind'].capitalize()}: {item['name']}")
+        logging.info(f"#{rank} | Điểm: {item['score']} | {item['kind'].capitalize()}: {item['name']}")
