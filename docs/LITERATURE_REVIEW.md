@@ -15,10 +15,26 @@
 | 4 | *Reliable Graph-RAG for Codebases: AST-Derived Graphs vs LLM-Extracted Knowledge Graphs* | Chinthareddy, arXiv:2601.08773 | Jan 2026 | ⭐⭐⭐⭐⭐ |
 | 5 | *Practical Code RAG at Scale: Task-Aware Retrieval Design Choices under Compute Budgets* | Galimzyanov et al., JetBrains/NeurIPS 2025 | Oct 2025 | ⭐⭐⭐⭐⭐ |
 | 6 | *How Aider's repomap uses PageRank to rank your codebase* | Paul Gauthier (Aider) | 2024 | ⭐⭐⭐⭐⭐ |
+| 7 | *Personalized PageRank Estimation and Search: A Bidirectional Approach* | Lofgren et al., Stanford Univ. (WSDM) | 2016 | 🌟 CORE |
 
 ---
 
 ## 2. In-Depth Summary & Architectural Debates
+
+---
+
+### 2.0. Mathematical Foundation: Bidirectional PPR (Lofgren et al., Stanford 2016) 🌟 CORE ALGORITHM
+
+**Summary:** This seminal paper from Stanford University provides the rigorous mathematical proofs and algorithms for efficiently estimating Personalized PageRank (PPR) using a Bidirectional approach on massive graphs (e.g., Twitter).
+
+**Why it matters for GraphRAG-Code:**
+While Lofgren et al. applied Bidirectional PPR to scale "Name Search" in social graphs by merging forward random walks with backward residual pushes, **GraphRAG-Code pioneers the application of this exact mathematical model to AST semantic analysis**. 
+
+By mapping codebase logic to a directed graph, we utilize the bidirectional nature of the algorithm not just for scaling speed, but for deep semantic architectural reasoning:
+*   **Forward PPR:** Traces downstream dependencies ("What external functions does this logic rely on?").
+*   **Backward PPR (Reversed Graph):** Traces upstream consumers to calculate "Blast Radius" ("Who calls this function, and what breaks if I change it?").
+
+GraphRAG-Code stands on the shoulders of this peer-reviewed mathematical foundation to guarantee robust performance and analytical correctness when extracting context for AI Agents.
 
 ---
 
