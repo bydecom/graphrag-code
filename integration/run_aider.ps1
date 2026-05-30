@@ -1,11 +1,11 @@
-# Script khởi động Aider (Parasite Integration)
-# Chạy script này từ thư mục graphrag_code_mvp\integration
+# Script to launch Aider with GraphRAG-Code MCP Server
+# Run this script from the graphrag-code\integration directory
 
-Write-Host "[🚀] Kích hoạt 'Chiến dịch Ký Sinh' (Parasite Integration) với Gemini" -ForegroundColor Green
-Write-Host "[⚡] Khởi động Aider và cắm Không gian Tri thức GraphRAG-Code..." -ForegroundColor Yellow
+Write-Host "[🚀] Activating Parasite Integration with Gemini" -ForegroundColor Green
+Write-Host "[⚡] Launching Aider and mounting GraphRAG-Code Knowledge Space..." -ForegroundColor Yellow
 
-# Bật biến môi trường API Key cho Gemini (Nhập key thật của bạn ở Terminal hoặc bỏ comment dòng dưới)
-# $env:GEMINI_API_KEY="AIzaSy...nhập_key_vào_đây..."
+# Set Gemini API Key environment variable (Insert your key here or set it in your terminal)
+# $env:GEMINI_API_KEY="your-gemini-api-key"
 
-# Trỏ Aider tới file config JSON để spawn GraphRAG-Code MCP Server, đồng thời ép dùng Gemini
+# Launch Aider with custom MCP config and force Gemini model
 ..\venv312\Scripts\aider.exe --model gemini/gemini-2.5-flash-lite --mcp .\aider_mcp_config.json
