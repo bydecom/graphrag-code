@@ -3,33 +3,34 @@ import rustworkx as rx
 import os
 import logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
-class GraphRAG-CodeEngine:
+
+class GraphRAGCodeEngine:
     def __init__(self, db_path="graphrag_code.sqlite"):
         self.db_path = db_path
         self.graph = rx.PyDiGraph()
-        # Mapping để đối chiếu giữa SQLite ID và Rustworkx Node Index
+        # Mapping between SQLite ID and Rustworkx Node Index
         self.sqlite_id_to_rx_idx = {}
         self.rx_idx_to_symbol_info = {}
 
     def load_graph(self):
         """
-        Nạp dữ liệu từ SQLite vào in-memory graph của rustworkx.
+        Loads data from SQLite into the in-memory rustworkx graph.
         
         Raises:
-            FileNotFoundError: Nếu file database không tồn tại (chưa chạy indexer).
-            RuntimeError: Nếu gặp lỗi kết nối hoặc truy vấn SQLite.
+            FileNotFoundError: If the database file does not exist (indexer hasn't run).
+            RuntimeError: If there's an SQLite connection or query error.
         """
         if not os.path.exists(self.db_path):
-            raise FileNotFoundError(f"❌ [LỖI DB] Không tìm thấy '{self.db_path}'. Vui lòng chạy indexer trước!")
+            raise FileNotFoundError(f"❌ [DB ERROR] '{self.db_path}' not found. Please run the indexer first!")
             
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
         except sqlite3.Error as e:
-            raise RuntimeError(f"❌ [LỖI KẾT NỐI DB] {e}")
+            raise RuntimeError(f"❌ [DB CONNECTION ERROR] {e}")
 
-        # 1. Load toàn bộ Symbols (Đỉnh)
-        # [UPDATE]: JOIN với bảng files để lấy thêm file_path
+        # 1. Load all Symbols (Nodes)
+        # JOIN with files table to obtain the file_path
         query_symbols = """
             SELECT s.id, s.name, s.kind, s.start_line, s.end_line, f.file_path 
             FROM symbols s
@@ -39,37 +40,37 @@ class GraphRAG-CodeEngine:
         symbols = cursor.fetchall()
         
         for sym_id, name, kind, start, end, file_path in symbols:
-            # Lưu thêm meta-data để sau này cắt code
+            # Store metadata for precise code block extraction
             node_data = {
                 "id": sym_id, "name": name, "kind": kind, 
                 "start_line": start, "end_line": end, "file_path": file_path
             }
             rx_idx = self.graph.add_node(node_data)
             
-            # Lưu lại mapping
+            # Save mapping
             self.sqlite_id_to_rx_idx[sym_id] = rx_idx
             self.rx_idx_to_symbol_info[rx_idx] = node_data
 
-        # 2. Load Edges (Cạnh) từ SQL VIEW trung tâm
-        # VIEW `resolved_edges` đã xử lý cross-file logic (import/extends) — DRY (P1-3)
+        # 2. Load Edges from central SQL VIEW
+        # The `resolved_edges` VIEW already resolves cross-file import/extends logic (DRY)
         query_edges = "SELECT source_id, target_id, edge_type FROM resolved_edges"
         cursor.execute(query_edges)
         edges = cursor.fetchall()
 
-        # Build danh sách các cạnh cho rustworkx (source_idx, target_idx, edge_data)
+        # Build edge list for rustworkx (source_idx, target_idx, edge_data)
         rx_edges = []
         for source_sqlite_id, target_sqlite_id, edge_type in edges:
             src_idx = self.sqlite_id_to_rx_idx.get(source_sqlite_id)
             tgt_idx = self.sqlite_id_to_rx_idx.get(target_sqlite_id)
             
             if src_idx is not None and tgt_idx is not None:
-                # Lưu edge metadata: type + weight (P1-4 từ Audit)
+                # Save edge metadata: type + weight
                 rx_edges.append((src_idx, tgt_idx, {"weight": 1.0, "type": edge_type}))
 
-        # Add edges hàng loạt bằng C-backend
+        # Batch add edges using C-backend
         self.graph.add_edges_from(rx_edges)
         
-        # Build reversed graph cho Bidirectional PPR (P0-1 từ Audit / Reliable Graph-RAG)
+        # Build reversed graph for Bidirectional PPR
         self.reversed_graph = rx.PyDiGraph()
         for idx in sorted(self.graph.node_indices()):
             self.reversed_graph.add_node(self.graph[idx])
@@ -78,44 +79,44 @@ class GraphRAG-CodeEngine:
         
         conn.close()
         
-        logging.info(f"[-] Đã nạp thành công Graph: {self.graph.num_nodes()} Nodes, {self.graph.num_edges()} Edges (+ reversed graph).")
+        logging.info(f"[-] Successfully loaded Graph: {self.graph.num_nodes()} Nodes, {self.graph.num_edges()} Edges (+ reversed graph).")
 
     def _extract_source_code(self, file_path, start_line, end_line):
-        """Hàm nội bộ: Đọc file và cắt đúng đoạn code cần thiết O(1) I/O"""
-        # Resolve đường dẫn tuyệt đối (relative với thư mục chứa DB)
+        """Internal helper: Read the file and slice the exact code block (O(1) I/O)"""
+        # Resolve absolute paths (relative to the directory containing the SQLite DB)
         db_dir = os.path.dirname(os.path.abspath(self.db_path))
         abs_file_path = file_path if os.path.isabs(file_path) else os.path.join(db_dir, file_path)
 
         if not os.path.exists(abs_file_path):
-            return f"<Không tìm thấy file nguồn trên disk: {abs_file_path}>"
+            return f"<Source file not found on disk: {abs_file_path}>"
         
         try:
             with open(abs_file_path, 'r', encoding='utf-8') as f:
                 lines = f.read().splitlines()
-                # Tree-sitter là 0-indexed, slice của Python cắt đến end_line + 1
+                # Tree-sitter is 0-indexed, Python slice goes to end_line + 1
                 snippet = "\n".join(lines[start_line:end_line + 1])
                 return snippet
         except Exception as e:
-            return f"<Lỗi đọc file: {str(e)}>"
+            return f"<Error reading file: {str(e)}>"
 
     def _get_expanded_seeds(self, seed_idx) -> list:
         """
-        [P0-2] Interface-Consumer Expansion.
-        Nếu seed là Child implements Interface I, tìm luôn cả Parent (I) 
-        và các Siblings (Child2) cũng implements Interface I.
-        Điều này giải quyết bài toán dependency thông qua interface/abstract class.
+        Interface-Consumer Expansion.
+        If the seed is a Child that implements/extends Interface I,
+        retrieve the Parent (I) and all Siblings (Child2) that also implement Interface I.
+        Resolves dynamic polymorphism dependencies via interface mappings.
         """
         interfaces = set()
-        # Tìm tất cả interfaces mà seed implements/extends
+        # Find all interfaces that the seed implements/extends
         for succ in self.graph.successor_indices(seed_idx):
             edges = self.graph.get_all_edge_data(seed_idx, succ)
             if any(isinstance(e, dict) and e.get("type") == "extends" for e in edges):
                 interfaces.add(succ)
                 
         expanded_seeds = {seed_idx}
-        # Từ interface, truy ngược về tất cả các consumers (classes implements interface đó)
+        # Trace back from interface to all consumers (classes extending/implementing it)
         for iface in interfaces:
-            expanded_seeds.add(iface)  # Boost điểm cho cả chính interface
+            expanded_seeds.add(iface)  # Boost weight for the interface itself
             for pred in self.graph.predecessor_indices(iface):
                 edges = self.graph.get_all_edge_data(pred, iface)
                 if any(isinstance(e, dict) and e.get("type") == "extends" for e in edges):
@@ -126,15 +127,15 @@ class GraphRAG-CodeEngine:
     def get_context_ppr(self, seed_name: str, top_k: int = 5,
                         backward_weight: float = 0.7):
         """
-        Chạy Bidirectional Personalized PageRank (P0-1 từ Audit).
-        Forward PPR: tìm downstream dependencies (A gọi B → tìm B).
-        Backward PPR: tìm upstream consumers/controllers (C gọi A → tìm C).
+        Runs Bidirectional Personalized PageRank.
+        Forward PPR: finds downstream dependencies (A calls B → retrieve B).
+        Backward PPR: finds upstream consumers/controllers (C calls A → retrieve C).
         
         Args:
-            backward_weight: Hệ số cho upstream scores (0.0-1.0).
-                            Mặc định 0.7 vì upstream mang ít context "how to fix" hơn.
+            backward_weight: Scale factor for upstream scores (0.0-1.0).
+                            Defaults to 0.7 as upstream files carry less direct bug-fix context.
         """
-        # Tìm rx_idx của Seed Node
+        # Find rx_idx of the Seed Node
         seed_idx = None
         for rx_idx, data in self.rx_idx_to_symbol_info.items():
             if data["name"] == seed_name:
@@ -142,27 +143,26 @@ class GraphRAG-CodeEngine:
                 break
                 
         if seed_idx is None:
-            logging.warning(f"[!] Không tìm thấy symbol '{seed_name}' trong Graph.")
+            logging.warning(f"[!] Symbol '{seed_name}' not found in the Graph.")
             return []
 
-        logging.info(f"\n[🚀] Khởi động Bidirectional PPR từ Seed: '{seed_name}'")
+        logging.info(f"\n[🚀] Launching Bidirectional PPR from Seed: '{seed_name}'")
 
-        # Mở rộng seeds nếu chạm vào Interface (P0-2)
+        # Expand seeds if hitting an Interface
         expanded_seeds = self._get_expanded_seeds(seed_idx)
         if len(expanded_seeds) > 1:
             names = [self.rx_idx_to_symbol_info[idx]["name"] for idx in expanded_seeds]
-            logging.info(f"  [+] Interface Expansion kích hoạt! Nhóm seeds: {names}")
+            logging.info(f"  [+] Interface Expansion triggered! Seed group: {names}")
 
-        # Cấu hình mảng Personalization: Ép năng lượng tập trung vào cụm Seed Nodes
+        # Configure Personalization vector: Concentrate teleport energy on Seed Nodes
         personalization = {n: 0.0 for n in self.graph.node_indices()}
         for n in expanded_seeds:
             personalization[n] = 1.0 / len(expanded_seeds)
 
-        # Weight function tương thích cả dict metadata và float legacy
+        # Weight function compatible with both dict metadata and float legacy formats
         weight_fn = lambda x: x["weight"] if isinstance(x, dict) else float(x)
 
         # Forward PPR: downstream dependencies
-        # Độ phức tạp: O(Iterations * (|V| + |E|))
         forward_scores = rx.pagerank(
             self.graph, 
             alpha=0.85, 
@@ -170,7 +170,7 @@ class GraphRAG-CodeEngine:
             personalization=personalization
         )
 
-        # Backward PPR: upstream consumers (chạy trên reversed graph)
+        # Backward PPR: upstream consumers (runs on reversed graph)
         backward_personalization = {n: 0.0 for n in self.reversed_graph.node_indices()}
         for n in expanded_seeds:
             if n in backward_personalization:
@@ -190,16 +190,16 @@ class GraphRAG-CodeEngine:
             bwd = backward_scores[idx] if idx in backward_scores else 0.0
             merged_scores[idx] = fwd + bwd * backward_weight
 
-        # Sắp xếp các node theo điểm số (Giảm dần) - Độ phức tạp: O(|V| log |V|)
+        # Sort nodes by score descending - Complexity: O(|V| log |V|)
         ranked_nodes = sorted(merged_scores.items(), key=lambda item: item[1], reverse=True)
 
-        # Trích xuất top_k kết quả (Lọc bỏ các node có điểm = 0.0 nếu có)
+        # Retrieve top_k results
         pruned_context = []
         for rx_idx, score in ranked_nodes[:top_k]:
             if score > 0:
                 symbol_data = self.rx_idx_to_symbol_info[rx_idx]
                 
-                # Gọi hàm cắt code
+                # Extract precise code snippet
                 source_code = self._extract_source_code(
                     symbol_data["file_path"], 
                     symbol_data["start_line"], 
@@ -221,11 +221,11 @@ if __name__ == "__main__":
     db_file = sys.argv[1] if len(sys.argv) > 1 else "graphrag_code.sqlite"
     seed_node = sys.argv[2] if len(sys.argv) > 2 else "process_checkout"
     
-    engine = GraphRAG-CodeEngine(db_file)
+    engine = GraphRAGCodeEngine(db_file)
     engine.load_graph()
     
     context = engine.get_context_ppr(seed_name=seed_node, top_k=10)
     
-    logging.info(f"\n=== PRUNED CONTEXT CHO '{seed_node}' ===")
+    logging.info(f"\n=== PRUNED CONTEXT FOR '{seed_node}' ===")
     for rank, item in enumerate(context, 1):
-        logging.info(f"#{rank} | Điểm: {item['score']} | {item['kind'].capitalize()}: {item['name']}")
+        logging.info(f"#{rank} | Score: {item['score']} | {item['kind'].capitalize()}: {item['name']}")

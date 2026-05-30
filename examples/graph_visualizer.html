@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>Enterprise CodeGraph Visualizer</title>
+    <title>GraphRAG-Code Visualizer</title>
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <style>
         body {
@@ -47,7 +47,7 @@
 
 <body>
     <div class="header">
-        <h2>🧠 Codebase Knowledge Graph (Phase 2)</h2>
+        <h2>🧠 Codebase Knowledge Graph Visualizer</h2>
         <div>
             <label for="fileInput" class="btn">📂 Upload graph_data.json</label>
             <input type="file" id="fileInput" accept=".json" style="display:none;" />
@@ -56,7 +56,7 @@
     <div id="mynetwork"></div>
 
     <script type="text/javascript">
-        // Màu sắc chuẩn mực Enterprise
+        // Standard Vis-Network configuration
         const options = {
             nodes: {
                 shape: 'box',
