@@ -1,0 +1,679 @@
+"""
+benchmark_suite.py — CodeGraph vs Brute-Force Benchmark
+=========================================================
+Đo lường thực tế: Token cost, latency, tool calls, accuracy
+Chạy: python benchmark_suite.py --db baychecker.sqlite --runs 3
+
+Yêu cầu:
+    pip install litellm mcp tiktoken rich
+
+Cấu trúc output:
+    benchmark_results/
+        run_YYYYMMDD_HHMMSS/
+            results.json       ← raw data
+            report.md          ← bảng markdown để paste vào README
+            summary.txt        ← tóm tắt terminal
+"""
+
+import asyncio
+import json
+import os
+import sys
+import time
+import argparse
+import statistics
+from datetime import datetime
+from pathlib import Path
+from dataclasses import dataclass, field, asdict
+from typing import Optional
+
+import litellm
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+# ── Optional: dùng tiktoken để đếm token chính xác hơn ──────────────────────
+try:
+    import tiktoken
+    _enc = tiktoken.get_encoding("cl100k_base")
+    def count_tokens(text: str) -> int:
+        return len(_enc.encode(text))
+except ImportError:
+    def count_tokens(text: str) -> int:
+        # Fallback: xấp xỉ 1 token ~ 4 chars
+        return len(text) // 4
+
+# ── Optional: rich để hiển thị đẹp ─────────────────────────────────────────
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.progress import track
+    console = Console()
+    HAS_RICH = True
+except ImportError:
+    HAS_RICH = False
+    class _FakeConsole:
+        def print(self, *a, **kw): print(*a)
+        def rule(self, *a, **kw): print("─" * 60)
+    console = _FakeConsole()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHẦN 1: ĐỊNH NGHĨA TEST CASES
+# Chỉnh sửa phần này cho phù hợp với codebase của bạn
+# ══════════════════════════════════════════════════════════════════════════════
+
+TEST_CASES = [
+    {
+        "id": "TC01",
+        "question": "Hàm nào chịu trách nhiệm kiểm tra lỗi (check validation) trong codebase này? Ai gọi nó và luồng hoạt động thế nào?",
+        "seed_node": "check_validation_errors",
+        "category": "architecture",
+        "expected_keywords": ["minibaycanvas", "update_status_border"], 
+    },
+    {
+        "id": "TC02",
+        "question": "Nếu tôi thay đổi logic trong hàm lấy loại tàu (_get_ship_type), những module nào sẽ bị ảnh hưởng (blast radius)?",
+        "seed_node": "_get_ship_type",
+        "category": "impact_analysis",
+        "expected_keywords": ["ship", "bay", "affect", "call", "import", "depend", "module"],
+    },
+    {
+        "id": "TC03",
+        "question": "Class BayMenu được cấu tạo từ những thành phần nào? Phương thức render_grid hoạt động ra sao?",
+        "seed_node": "BayMenu",
+        "category": "architecture",
+        "expected_keywords": ["render_grid", "canvas", "grid"],
+    }
+]
+
+# ── Bạn có thể thêm test cases tùy theo codebase của mình ───────────────────
+CUSTOM_TEST_CASES = []  # Thêm vào đây nếu muốn
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHẦN 2: DATA STRUCTURES
+# ══════════════════════════════════════════════════════════════════════════════
+
+@dataclass
+class RunMetrics:
+    """Metrics cho một lần chạy đơn lẻ."""
+    tokens_input: int = 0
+    tokens_output: int = 0
+    tool_calls: int = 0
+    latency_seconds: float = 0.0
+    answer_text: str = ""
+    accuracy_score: float = 0.0     # 0.0 → 1.0 dựa trên keyword matching
+    error: Optional[str] = None
+    messages_history: list = field(default_factory=list)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.tokens_input + self.tokens_output
+
+    @property
+    def cost_usd_estimate(self) -> float:
+        # Gemini Flash pricing xấp xỉ (thay đổi theo model bạn dùng)
+        input_cost = self.tokens_input * 0.075 / 1_000_000
+        output_cost = self.tokens_output * 0.30 / 1_000_000
+        return round(input_cost + output_cost, 6)
+
+
+@dataclass
+class TestResult:
+    """Kết quả tổng hợp cho một test case (nhiều runs)."""
+    test_id: str
+    question: str
+    category: str
+
+    codegraph_runs: list[RunMetrics] = field(default_factory=list)
+    baseline_runs:  list[RunMetrics] = field(default_factory=list)
+
+    def _median(self, values: list[float]) -> float:
+        return statistics.median(values) if values else 0.0
+
+    def _valid_runs(self, runs: list[RunMetrics]) -> list[RunMetrics]:
+        return [r for r in runs if r.error is None]
+
+    def summary(self, arm: str) -> dict:
+        runs = self._valid_runs(
+            self.codegraph_runs if arm == "codegraph" else self.baseline_runs
+        )
+        if not runs:
+            return {"error": "All runs failed"}
+        return {
+            "median_tokens":    self._median([r.total_tokens for r in runs]),
+            "median_latency":   round(self._median([r.latency_seconds for r in runs]), 2),
+            "median_tool_calls": self._median([r.tool_calls for r in runs]),
+            "median_accuracy":  round(self._median([r.accuracy_score for r in runs]), 2),
+            "median_cost_usd":  round(self._median([r.cost_usd_estimate for r in runs]), 6),
+            "valid_runs":       len(runs),
+        }
+
+    def savings(self) -> dict:
+        cg = self.summary("codegraph")
+        bl = self.summary("baseline")
+        if "error" in cg or "error" in bl:
+            return {}
+
+        def pct(after, before):
+            return round((1 - after / before) * 100, 1) if before > 0 else 0.0
+
+        return {
+            "token_savings_pct":    pct(cg["median_tokens"],    bl["median_tokens"]),
+            "latency_savings_pct":  pct(cg["median_latency"],   bl["median_latency"]),
+            "tool_call_savings_pct": pct(cg["median_tool_calls"], bl["median_tool_calls"]),
+            "accuracy_delta":       round(cg["median_accuracy"] - bl["median_accuracy"], 2),
+        }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHẦN 3: AGENT RUNNERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+SYSTEM_PROMPT_CODEGRAPH = """Bạn là AI Software Architect. Hãy phân tích codebase được cung cấp qua CodeGraph tools.
+
+Quy trình BẮT BUỘC:
+1. Gọi `list_symbols` để xem tổng quan codebase.
+2. Gọi `get_pruned_context` với seed_node phù hợp để lấy context chính xác.
+3. Nếu cần biết ai đang gọi một hàm, dùng `get_callers`.
+4. Trả lời ngắn gọn, chính xác dựa trên CODE THẬT từ tools — không đoán mò.
+
+Không được đọc file thủ công. Chỉ dùng tools được cung cấp."""
+
+SYSTEM_PROMPT_BASELINE = """Bạn là AI Software Architect. Phân tích codebase được cung cấp dưới đây.
+
+Hãy trả lời câu hỏi dựa trên code được cung cấp trong context. Trả lời ngắn gọn và chính xác."""
+
+
+def _calc_accuracy(answer: str, expected_keywords: list[str]) -> float:
+    """Tính accuracy đơn giản dựa trên keyword matching (0.0–1.0)."""
+    if not expected_keywords:
+        return 1.0
+    answer_lower = answer.lower()
+    hits = sum(1 for kw in expected_keywords if kw.lower() in answer_lower)
+    return round(hits / len(expected_keywords), 2)
+
+
+async def run_codegraph_agent(
+    question: str,
+    seed_node: Optional[str],
+    expected_keywords: list[str],
+    db_path: str,
+    model: str,
+    api_key: str,
+) -> RunMetrics:
+    """Chạy agent với CodeGraph MCP tools."""
+    metrics = RunMetrics()
+    start = time.perf_counter()
+
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    env["CODEGRAPH_DB"] = db_path
+
+    # Gọi mcp server dưới dạng module Python (sau khi đã tái cấu trúc vào thư mục src)
+    server_params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "codegraph.mcp_server"],
+        env=env
+    )
+
+    try:
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+
+                mcp_tools = await session.list_tools()
+                llm_tools = [
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.inputSchema,
+                        }
+                    }
+                    for t in mcp_tools.tools
+                ]
+
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT_CODEGRAPH},
+                    {"role": "user",   "content": question},
+                ]
+
+                # Nếu có seed_node gợi ý, thêm vào context
+                if seed_node:
+                    messages[1]["content"] += f"\n\n[Gợi ý: bắt đầu từ symbol '{seed_node}']"
+
+                # Agent loop
+                for _ in range(10):   # max 10 vòng tool calling
+                    response = await litellm.acompletion(
+                        model=model,
+                        messages=messages,
+                        tools=llm_tools,
+                        api_key=api_key,
+                    )
+
+                    msg = response.choices[0].message
+                    metrics.tokens_input  += response.usage.prompt_tokens
+                    metrics.tokens_output += response.usage.completion_tokens
+
+                    msg_dict = msg.model_dump(exclude_none=True)
+                    messages.append(msg_dict)
+
+                    if msg.tool_calls:
+                        for tc in msg.tool_calls:
+                            metrics.tool_calls += 1
+                            args = json.loads(tc.function.arguments)
+                            result = await session.call_tool(tc.function.name, arguments=args)
+                            result_text = "\n".join(
+                                c.text for c in result.content if c.type == "text"
+                            )
+                            messages.append({
+                                "role":        "tool",
+                                "tool_call_id": tc.id,
+                                "name":         tc.function.name,
+                                "content":      result_text,
+                            })
+                    else:
+                        # Agent kết thúc
+                        metrics.answer_text    = msg.content or ""
+                        metrics.accuracy_score = _calc_accuracy(
+                            metrics.answer_text, expected_keywords
+                        )
+                        break
+
+    except Exception as e:
+        metrics.error = str(e)
+
+    metrics.latency_seconds = round(time.perf_counter() - start, 2)
+    return metrics
+
+
+async def run_baseline_agent(
+    question: str,
+    expected_keywords: list[str],
+    codebase_dump: str,
+    model: str,
+    api_key: str,
+) -> RunMetrics:
+    """Chạy agent brute-force: đưa toàn bộ codebase vào context."""
+    metrics = RunMetrics()
+    start = time.perf_counter()
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT_BASELINE},
+        {
+            "role": "user",
+            "content": f"CODEBASE:\n\n{codebase_dump}\n\nCÂU HỎI: {question}"
+        },
+    ]
+
+    try:
+        response = await litellm.acompletion(
+            model=model,
+            messages=messages,
+            api_key=api_key,
+        )
+        metrics.tokens_input  = response.usage.prompt_tokens
+        metrics.tokens_output = response.usage.completion_tokens
+        metrics.tool_calls    = 0   # Brute-force không dùng tools
+        metrics.answer_text   = response.choices[0].message.content or ""
+        metrics.accuracy_score = _calc_accuracy(metrics.answer_text, expected_keywords)
+
+    except Exception as e:
+        metrics.error = str(e)
+
+    metrics.latency_seconds = round(time.perf_counter() - start, 2)
+    return metrics
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHẦN 4: CODEBASE DUMP (cho baseline arm)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_codebase_dump(codebase_dir: str, max_files: int = 50) -> str:
+    """
+    Đọc tất cả file .py trong thư mục và ghép lại thành một chuỗi lớn.
+    Đây là cách brute-force agents hoạt động (full codebase in context).
+    """
+    parts = []
+    count = 0
+    for root, _, files in os.walk(codebase_dir):
+        for fname in sorted(files):
+            if not fname.endswith(".py"):
+                continue
+            fpath = os.path.join(root, fname)
+            try:
+                content = Path(fpath).read_text(encoding="utf-8", errors="replace")
+                parts.append(f"# FILE: {fpath}\n{content}\n")
+                count += 1
+                if count >= max_files:
+                    parts.append(f"\n# ... (truncated, {max_files} files shown)")
+                    return "\n".join(parts)
+            except Exception:
+                pass
+    return "\n".join(parts) if parts else "# (no Python files found)"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHẦN 5: REPORTING
+# ══════════════════════════════════════════════════════════════════════════════
+
+def save_results(results: list[TestResult], output_dir: Path):
+    """Lưu kết quả ra JSON và Markdown."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── JSON raw ─────────────────────────────────────────────────────────────
+    raw = []
+    for r in results:
+        raw.append({
+            "test_id":  r.test_id,
+            "question": r.question,
+            "category": r.category,
+            "codegraph": r.summary("codegraph"),
+            "baseline":  r.summary("baseline"),
+            "savings":   r.savings(),
+        })
+    json_path = output_dir / "results.json"
+    json_path.write_text(json.dumps(raw, indent=2, ensure_ascii=False))
+
+    # ── Markdown report ───────────────────────────────────────────────────────
+    lines = [
+        "# 📊 CodeGraph Benchmark Results",
+        f"> Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        "",
+        "## Summary",
+        "",
+        "| Test | Category | Token Savings | Latency Savings | Accuracy Δ |",
+        "|------|----------|--------------|----------------|------------|",
+    ]
+    for r in results:
+        s = r.savings()
+        if s:
+            lines.append(
+                f"| {r.test_id} | {r.category} "
+                f"| {s['token_savings_pct']}% "
+                f"| {s['latency_savings_pct']}% "
+                f"| {s['accuracy_delta']:+.2f} |"
+            )
+        else:
+            lines.append(f"| {r.test_id} | {r.category} | N/A | N/A | N/A |")
+
+    # Aggregate
+    valid = [r for r in results if r.savings()]
+    if valid:
+        avg_token = round(statistics.mean(r.savings()["token_savings_pct"] for r in valid), 1)
+        avg_lat   = round(statistics.mean(r.savings()["latency_savings_pct"] for r in valid), 1)
+        avg_acc   = round(statistics.mean(r.savings()["accuracy_delta"] for r in valid), 2)
+        lines += [
+            "",
+            f"**Overall: {avg_token}% token savings · {avg_lat}% latency reduction · Accuracy delta {avg_acc:+.2f}**",
+        ]
+
+    lines += ["", "## Detailed Results", ""]
+    for r in results:
+        cg = r.summary("codegraph")
+        bl = r.summary("baseline")
+        lines += [
+            f"### {r.test_id}: {r.question[:80]}...",
+            "",
+            "| Metric | 🔴 Baseline (Brute-force) | 🟢 CodeGraph PPR | Δ |",
+            "|--------|--------------------------|-----------------|---|",
+        ]
+        for metric in ["median_tokens", "median_latency", "median_tool_calls", "median_accuracy"]:
+            cg_val = cg.get(metric, "N/A")
+            bl_val = bl.get(metric, "N/A")
+            if isinstance(cg_val, float) and isinstance(bl_val, float) and bl_val > 0:
+                delta = f"{((cg_val - bl_val) / bl_val * 100):+.1f}%"
+            else:
+                delta = "N/A"
+            lines.append(f"| {metric} | {bl_val} | {cg_val} | {delta} |")
+        lines.append("")
+
+    md_path = output_dir / "report.md"
+    md_path.write_text("\n".join(lines), encoding="utf-8")
+
+    console.print(f"\n✅ Results saved to: [bold]{output_dir}[/bold]")
+    console.print(f"   📄 JSON:     {json_path}")
+    console.print(f"   📝 Markdown: {md_path}")
+
+    return raw
+
+
+def print_summary_table(results: list[TestResult]):
+    """In bảng tóm tắt ra terminal."""
+    if not HAS_RICH:
+        print("\n=== BENCHMARK SUMMARY ===")
+        for r in results:
+            s = r.savings()
+            print(f"{r.test_id}: token_savings={s.get('token_savings_pct', 'N/A')}%")
+        return
+
+    table = Table(title="📊 Benchmark Summary", show_lines=True)
+    table.add_column("Test",      style="cyan",  no_wrap=True)
+    table.add_column("Category",  style="magenta")
+    table.add_column("Tokens BL", justify="right")
+    table.add_column("Tokens CG", justify="right")
+    table.add_column("Token Δ",   justify="right", style="green")
+    table.add_column("Latency Δ", justify="right", style="yellow")
+    table.add_column("Acc Δ",     justify="right")
+
+    for r in results:
+        cg = r.summary("codegraph")
+        bl = r.summary("baseline")
+        s  = r.savings()
+        if "error" in cg or "error" in bl or not s:
+            table.add_row(r.test_id, r.category, "ERR", "ERR", "-", "-", "-")
+        else:
+            acc_color = "green" if s["accuracy_delta"] >= 0 else "red"
+            table.add_row(
+                r.test_id,
+                r.category,
+                f"{bl['median_tokens']:,.0f}",
+                f"{cg['median_tokens']:,.0f}",
+                f"[green]-{s['token_savings_pct']}%[/green]",
+                f"[yellow]-{s['latency_savings_pct']}%[/yellow]",
+                f"[{acc_color}]{s['accuracy_delta']:+.2f}[/{acc_color}]",
+            )
+
+    console.print(table)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHẦN 6: MAIN ORCHESTRATOR
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def run_benchmark(args):
+    api_key = args.api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        console.print("[red]❌ Cần set GEMINI_API_KEY hoặc OPENAI_API_KEY[/red]")
+        sys.exit(1)
+
+    all_cases = TEST_CASES + CUSTOM_TEST_CASES
+    if args.test_ids:
+        ids = set(args.test_ids.split(","))
+        all_cases = [t for t in all_cases if t["id"] in ids]
+
+    console.rule(f"[bold cyan]CodeGraph Benchmark Suite[/bold cyan]")
+    console.print(f"  Model:    {args.model}")
+    console.print(f"  DB:       {args.db}")
+    console.print(f"  Runs/arm: {args.runs}")
+    console.print(f"  Tests:    {len(all_cases)}")
+    console.rule()
+
+    # Build codebase dump cho baseline arm
+    codebase_dump = ""
+    if args.codebase_dir:
+        console.print(f"[dim]Building codebase dump from: {args.codebase_dir}[/dim]")
+        codebase_dump = build_codebase_dump(args.codebase_dir, max_files=args.max_files)
+        tokens_in_dump = count_tokens(codebase_dump)
+        console.print(f"[dim]Dump size: ~{tokens_in_dump:,} tokens ({len(codebase_dump):,} chars)[/dim]")
+    else:
+        console.print("[yellow]⚠️  --codebase-dir không được cung cấp. Baseline arm sẽ dùng dump rỗng.[/yellow]")
+
+    results: list[TestResult] = []
+
+    for tc in all_cases:
+        console.rule(f"[bold]{tc['id']}: {tc['question'][:60]}...[/bold]")
+        result = TestResult(
+            test_id=tc["id"],
+            question=tc["question"],
+            category=tc["category"],
+        )
+
+        # ── CodeGraph arm ────────────────────────────────────────────────────
+        console.print(f"  [cyan]→ Running CodeGraph arm ({args.runs} runs)...[/cyan]")
+        for run_idx in range(args.runs):
+            console.print(f"    Run {run_idx+1}/{args.runs}", end=" ")
+            metrics = await run_codegraph_agent(
+                question=tc["question"],
+                seed_node=tc.get("seed_node"),
+                expected_keywords=tc.get("expected_keywords", []),
+                db_path=args.db,
+                model=args.model,
+                api_key=api_key,
+            )
+            result.codegraph_runs.append(metrics)
+            if metrics.error:
+                console.print(f"[red]ERROR: {metrics.error}[/red]")
+            else:
+                console.print(
+                    f"[green]✓[/green] tokens={metrics.total_tokens:,} "
+                    f"tools={metrics.tool_calls} "
+                    f"lat={metrics.latency_seconds}s "
+                    f"acc={metrics.accuracy_score:.2f}"
+                )
+
+            # Cooldown giữa các runs để tránh rate limit
+            if run_idx < args.runs - 1:
+                await asyncio.sleep(args.cooldown)
+
+        # ── Baseline arm ─────────────────────────────────────────────────────
+        if not args.skip_baseline:
+            console.print(f"  [yellow]→ Running Baseline arm ({args.runs} runs)...[/yellow]")
+            for run_idx in range(args.runs):
+                console.print(f"    Run {run_idx+1}/{args.runs}", end=" ")
+                metrics = await run_baseline_agent(
+                    question=tc["question"],
+                    expected_keywords=tc.get("expected_keywords", []),
+                    codebase_dump=codebase_dump,
+                    model=args.model,
+                    api_key=api_key,
+                )
+                result.baseline_runs.append(metrics)
+                if metrics.error:
+                    console.print(f"[red]ERROR: {metrics.error}[/red]")
+                else:
+                    console.print(
+                        f"[yellow]✓[/yellow] tokens={metrics.total_tokens:,} "
+                        f"tools={metrics.tool_calls} "
+                        f"lat={metrics.latency_seconds}s "
+                        f"acc={metrics.accuracy_score:.2f}"
+                    )
+
+                if run_idx < args.runs - 1:
+                    await asyncio.sleep(args.cooldown)
+
+        results.append(result)
+
+    # ── Print summary ────────────────────────────────────────────────────────
+    console.rule()
+    print_summary_table(results)
+
+    # ── Save results ─────────────────────────────────────────────────────────
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_dir = Path(args.output_dir) / f"run_{timestamp}"
+    save_results(results, out_dir)
+
+    return results
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHẦN 7: CLI ENTRY POINT
+# ══════════════════════════════════════════════════════════════════════════════
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="CodeGraph Benchmark Suite — đo token savings vs brute-force"
+    )
+    parser.add_argument(
+        "--db",
+        default="codegraph.sqlite",
+        help="Đường dẫn tới SQLite database của CodeGraph (default: codegraph.sqlite)"
+    )
+    parser.add_argument(
+        "--codebase-dir",
+        default=None,
+        help="Thư mục chứa source code để build baseline dump (default: None)"
+    )
+    parser.add_argument(
+        "--model",
+        default="gemini/gemini-2.5-flash-lite",
+        help="LiteLLM model string (default: gemini/gemini-2.5-flash-lite)"
+    )
+    parser.add_argument(
+        "--api-key",
+        default=None,
+        help="API key (hoặc set env GEMINI_API_KEY / OPENAI_API_KEY)"
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=3,
+        help="Số lần chạy mỗi arm để lấy median (default: 3)"
+    )
+    parser.add_argument(
+        "--cooldown",
+        type=float,
+        default=2.0,
+        help="Giây nghỉ giữa các runs để tránh rate limit (default: 2.0)"
+    )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=50,
+        help="Số file tối đa đưa vào baseline dump (default: 50)"
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="benchmark_results",
+        help="Thư mục lưu kết quả (default: benchmark_results/)"
+    )
+    parser.add_argument(
+        "--test-ids",
+        default=None,
+        help="Chỉ chạy một số test IDs, cách nhau bằng dấu phẩy (vd: TC01,TC03)"
+    )
+    parser.add_argument(
+        "--skip-baseline",
+        action="store_true",
+        help="Bỏ qua baseline arm, chỉ đo CodeGraph (dùng khi debug)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Chỉ in ra config, không chạy thật"
+    )
+    return parser.parse_args()
+
+
+def main():
+    litellm.suppress_debug_info = True
+
+    if sys.platform == "win32":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+    args = parse_args()
+
+    if args.dry_run:
+        console.print("[bold yellow]DRY RUN — config:[/bold yellow]")
+        console.print(vars(args))
+        console.print(f"\nTest cases sẽ chạy: {len(TEST_CASES + CUSTOM_TEST_CASES)}")
+        sys.exit(0)
+
+    asyncio.run(run_benchmark(args))
+
+
+if __name__ == "__main__":
+    main()

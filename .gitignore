@@ -1,0 +1,14 @@
+*.sqlite
+__pycache__/
+.env
+venv*/
+*.pyc
+benchmark_results/
+.codegraph/
+.pytest_cache/
+graph_data.json
+*.egg-info/
+dist/
+build/
+local_test/
+documents/
