@@ -1,4 +1,6 @@
 import os
+import logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 from mcp.server.fastmcp import FastMCP
 from codegraph.graph_engine import CodeGraphEngine
 
@@ -18,7 +20,7 @@ try:
     engine = CodeGraphEngine(db_file)
     engine.load_graph()
 except FileNotFoundError as e:
-    print(f"⚠️ [WARNING] Server khởi động ở chế độ chờ. Chưa tìm thấy DB '{db_file}'. Cần chạy indexer trước.")
+    logging.warning(f"⚠️ [WARNING] Server khởi động ở chế độ chờ. Chưa tìm thấy DB '{db_file}'. Cần chạy indexer trước.")
     engine = None
 
 @mcp.tool()
@@ -148,7 +150,7 @@ def list_symbols(file_path: str = "") -> str:
 
 def main():
     # Chạy MCP Server qua stdio (Standard I/O) - Giao thức chuẩn cho AI Agents
-    print("\n[⚡] MCP Server 'CodeGraph_Enterprise' đang chạy và lắng nghe Agent...")
+    logging.info("\n[⚡] MCP Server 'CodeGraph' đang chạy và lắng nghe Agent...")
     mcp.run(transport='stdio')
 
 if __name__ == "__main__":
