@@ -6,7 +6,7 @@ import sys
 # Thêm thư mục gốc vào path để có thể import các module của MVP
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
-from codegraph.indexer import init_db, compute_checksum
+from graphrag_code.indexer import init_db, compute_checksum
 
 class TestIndexer(unittest.TestCase):
     def setUp(self):

@@ -2,7 +2,7 @@ import sqlite3
 import json
 import argparse
 
-def export_to_json(db_path="codegraph.sqlite", out_path="graph_data.json"):
+def export_to_json(db_path="graphrag_code.sqlite", out_path="graph_data.json"):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -56,5 +56,5 @@ def export_to_json(db_path="codegraph.sqlite", out_path="graph_data.json"):
 
 if __name__ == "__main__":
     import sys
-    db = sys.argv[1] if len(sys.argv) > 1 else "codegraph.sqlite"
+    db = sys.argv[1] if len(sys.argv) > 1 else "graphrag_code.sqlite"
     export_to_json(db_path=db)

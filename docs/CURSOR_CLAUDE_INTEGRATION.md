@@ -1,16 +1,16 @@
-# CodeGraph Enterprise - MCP Setup cho Cursor / Claude
+# GraphRAG-Code - MCP Setup cho Cursor / Claude
 
-Để tích hợp CodeGraph vào môi trường phát triển của bạn dưới dạng một MCP Server, hãy cấu hình theo hướng dẫn sau.
+Để tích hợp GraphRAG-Code vào môi trường phát triển của bạn dưới dạng một MCP Server, hãy cấu hình theo hướng dẫn sau.
 
-Lưu ý: Bạn phải cài đặt CodeGraph thông qua `pip install -e .` trước khi thực hiện bước này để hệ thống nhận diện được lệnh `codegraph-mcp`.
+Lưu ý: Bạn phải cài đặt GraphRAG-Code thông qua `pip install -e .` trước khi thực hiện bước này để hệ thống nhận diện được lệnh `graphrag-code-mcp`.
 
 ## Dành cho Cursor IDE
 1. Mở Cài đặt (Settings) -> Features -> MCP Servers
 2. Chọn "Add New MCP Server"
 3. Thiết lập như sau:
-   - Name: `CodeGraph`
+   - Name: `GraphRAG-Code`
    - Type: `command`
-   - Command: `codegraph-mcp`
+   - Command: `graphrag-code-mcp`
 
 ## Dành cho Claude Desktop
 Thêm đoạn JSON sau vào file cấu hình của Claude (`claude_desktop_config.json`):
@@ -18,12 +18,12 @@ Thêm đoạn JSON sau vào file cấu hình của Claude (`claude_desktop_confi
 ```json
 {
   "mcpServers": {
-    "CodeGraph": {
-      "command": "codegraph-mcp",
+    "GraphRAG-Code": {
+      "command": "graphrag-code-mcp",
       "env": {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
-        "CODEGRAPH_DB": "codegraph.sqlite"
+        "CODEGRAPH_DB": "graphrag_code.sqlite"
       }
     }
   }

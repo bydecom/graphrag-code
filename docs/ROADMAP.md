@@ -1,6 +1,6 @@
-# CodeGraph Public Roadmap
+# GraphRAG-Code Public Roadmap
 
-This document outlines the high-level roadmap for the CodeGraph open-source ecosystem. We welcome community feedback, feature requests, and academic collaboration.
+This document outlines the high-level roadmap for the GraphRAG-Code open-source ecosystem. We welcome community feedback, feature requests, and academic collaboration.
 
 ---
 
@@ -8,7 +8,7 @@ This document outlines the high-level roadmap for the CodeGraph open-source ecos
 
 ```mermaid
 gantt
-    title CodeGraph Evolution Phases
+    title GraphRAG-Code Evolution Phases
     dateFormat  YYYY-MM-DD
     section Public Alpha
     v0.1.0-alpha Polish & Launch :active, 2026-05-31, 2d
@@ -35,7 +35,7 @@ gantt
     1.  **Multi-Language AST Support:** Add tree-sitter static parsing configurations for TypeScript/JavaScript and Java.
     2.  **Active File Boost:** Boost personalized weights dynamically for nodes belonging to files currently focused in active IDE windows.
     3.  **Basic Semantic Resolution:** Resolve explicit cross-file imports and parameter type annotations to minimize graph connectivity gaps.
-    4.  **Community Evaluation:** Benchmark CodeGraph metrics on $\ge$ 5 real-world open-source repositories.
+    4.  **Community Evaluation:** Benchmark GraphRAG-Code metrics on $\ge$ 5 real-world open-source repositories.
 
 ### Phase 3: Academic Ablation & Research Positioning (v0.3.0) — *Est: July 2026*
 *   **Target Deliverables:**
@@ -45,7 +45,7 @@ gantt
 
 ### Phase 4: Production Packaging (v0.5.0) — *Est: August 2026*
 *   **Target Deliverables:**
-    1.  **PyPI Release:** Package modular `codegraph-core` structure and publish to public repositories.
+    1.  **PyPI Release:** Package modular `graphrag-code-core` structure and publish to public repositories.
     2.  **Incremental Watch Mode:** Setup persistent file-system watching (`watchdog`) to update graph caches instantly.
     3.  **Module Clustering:** Run Louvain or Leiden community detection to bundle large code graphs into human-navigable module groups.
 

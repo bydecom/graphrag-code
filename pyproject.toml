@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "codegraph-core"
+name = "graphrag-code-core"
 version = "0.1.0"
 description = "Knowledge Graph for Codebases using AST and Bidirectional PPR (Model Context Protocol Supported)"
 readme = "README.md"
@@ -39,7 +39,7 @@ dev = [
 ]
 
 [project.scripts]
-# Lưu ý: Các entry point này sẽ hoạt động sau khi ta đưa code vào cấu trúc src/codegraph
-codegraph-index = "codegraph.indexer:main"
-codegraph-mcp = "codegraph.mcp_server:main"
-codegraph-agent = "codegraph.cli_agent:main"
+# Lưu ý: Các entry point này sẽ hoạt động sau khi ta đưa code vào cấu trúc src/graphrag_code
+graphrag-code-index = "graphrag_code.indexer:main"
+graphrag-code-mcp = "graphrag_code.mcp_server:main"
+graphrag-code-agent = "graphrag_code.cli_agent:main"

@@ -1,6 +1,6 @@
 # Integration Guide
 
-This directory contains integration configuration files and helper scripts to plug **CodeGraph** directly into **Aider** (or other MCP-compliant assistants like Claude Desktop, Cursor) natively without modifying the client source code.
+This directory contains integration configuration files and helper scripts to plug **GraphRAG-Code** directly into **Aider** (or other MCP-compliant assistants like Claude Desktop, Cursor) natively without modifying the client source code.
 
 ## Available Files:
 
@@ -9,9 +9,9 @@ This directory contains integration configuration files and helper scripts to pl
 
 ## Usage Instructions:
 
-1. Ensure you have run the indexer once to generate the local database file `codegraph.sqlite`:
+1. Ensure you have run the indexer once to generate the local database file `graphrag_code.sqlite`:
    ```bash
-   codegraph-index --db codegraph.sqlite src
+   graphrag-code-index --db graphrag_code.sqlite src
    ```
 2. Navigate to the `integration/` directory:
    ```powershell
@@ -25,7 +25,7 @@ This directory contains integration configuration files and helper scripts to pl
    ```powershell
    .\run_aider.ps1
    ```
-5. Aider will boot and display a connection success message to the `CodeGraph` MCP Server.
+5. Aider will boot and display a connection success message to the `GraphRAG-Code` MCP Server.
 6. Test it out with a query:
    > *"Use the tool list_symbols to list functions in mcp_server.py"*
 

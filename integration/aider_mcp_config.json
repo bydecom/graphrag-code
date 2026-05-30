@@ -1,11 +1,11 @@
 {
   "mcpServers": {
-    "CodeGraph": {
-      "command": "codegraph-mcp",
+    "GraphRAG-Code": {
+      "command": "graphrag-code-mcp",
       "env": {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
-        "CODEGRAPH_DB": "codegraph.sqlite"
+        "CODEGRAPH_DB": "graphrag_code.sqlite"
       }
     }
   }

@@ -1,8 +1,8 @@
 """
-benchmark_suite.py — CodeGraph vs Brute-Force Benchmark
+benchmark_suite.py — GraphRAG-Code vs Brute-Force Benchmark
 =========================================================
 Đo lường thực tế: Token cost, latency, tool calls, accuracy
-Chạy: python benchmark_suite.py --db codegraph.sqlite --runs 3
+Chạy: python benchmark_suite.py --db graphrag_code.sqlite --runs 3
 
 Yêu cầu:
     pip install litellm mcp tiktoken rich
@@ -125,7 +125,7 @@ class TestResult:
     question: str
     category: str
 
-    codegraph_runs: list[RunMetrics] = field(default_factory=list)
+    graphrag_code_runs: list[RunMetrics] = field(default_factory=list)
     baseline_runs:  list[RunMetrics] = field(default_factory=list)
 
     def _median(self, values: list[float]) -> float:
@@ -136,7 +136,7 @@ class TestResult:
 
     def summary(self, arm: str) -> dict:
         runs = self._valid_runs(
-            self.codegraph_runs if arm == "codegraph" else self.baseline_runs
+            self.graphrag_code_runs if arm == "graphrag_code" else self.baseline_runs
         )
         if not runs:
             return {"error": "All runs failed"}
@@ -150,7 +150,7 @@ class TestResult:
         }
 
     def savings(self) -> dict:
-        cg = self.summary("codegraph")
+        cg = self.summary("graphrag_code")
         bl = self.summary("baseline")
         if "error" in cg or "error" in bl:
             return {}
@@ -170,7 +170,7 @@ class TestResult:
 # PHẦN 3: AGENT RUNNERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-SYSTEM_PROMPT_CODEGRAPH = """Bạn là AI Software Architect. Hãy phân tích codebase được cung cấp qua CodeGraph tools.
+SYSTEM_PROMPT_CODEGRAPH = """Bạn là AI Software Architect. Hãy phân tích codebase được cung cấp qua GraphRAG-Code tools.
 
 Quy trình BẮT BUỘC:
 1. Gọi `list_symbols` để xem tổng quan codebase.
@@ -194,7 +194,7 @@ def _calc_accuracy(answer: str, expected_keywords: list[str]) -> float:
     return round(hits / len(expected_keywords), 2)
 
 
-async def run_codegraph_agent(
+async def run_graphrag_code_agent(
     question: str,
     seed_node: Optional[str],
     expected_keywords: list[str],
@@ -202,7 +202,7 @@ async def run_codegraph_agent(
     model: str,
     api_key: str,
 ) -> RunMetrics:
-    """Chạy agent với CodeGraph MCP tools."""
+    """Chạy agent với GraphRAG-Code MCP tools."""
     metrics = RunMetrics()
     start = time.perf_counter()
 
@@ -214,7 +214,7 @@ async def run_codegraph_agent(
     # Gọi mcp server dưới dạng module Python (sau khi đã tái cấu trúc vào thư mục src)
     server_params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "codegraph.mcp_server"],
+        args=["-m", "graphrag_code.mcp_server"],
         env=env
     )
 
@@ -371,7 +371,7 @@ def save_results(results: list[TestResult], output_dir: Path):
             "test_id":  r.test_id,
             "question": r.question,
             "category": r.category,
-            "codegraph": r.summary("codegraph"),
+            "graphrag_code": r.summary("graphrag_code"),
             "baseline":  r.summary("baseline"),
             "savings":   r.savings(),
         })
@@ -380,7 +380,7 @@ def save_results(results: list[TestResult], output_dir: Path):
 
     # ── Markdown report ───────────────────────────────────────────────────────
     lines = [
-        "# 📊 CodeGraph Benchmark Results",
+        "# 📊 GraphRAG-Code Benchmark Results",
         f"> Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
         "## Summary",
@@ -413,12 +413,12 @@ def save_results(results: list[TestResult], output_dir: Path):
 
     lines += ["", "## Detailed Results", ""]
     for r in results:
-        cg = r.summary("codegraph")
+        cg = r.summary("graphrag_code")
         bl = r.summary("baseline")
         lines += [
             f"### {r.test_id}: {r.question[:80]}...",
             "",
-            "| Metric | 🔴 Baseline (Brute-force) | 🟢 CodeGraph PPR | Δ |",
+            "| Metric | 🔴 Baseline (Brute-force) | 🟢 GraphRAG-Code PPR | Δ |",
             "|--------|--------------------------|-----------------|---|",
         ]
         for metric in ["median_tokens", "median_latency", "median_tool_calls", "median_accuracy"]:
@@ -460,7 +460,7 @@ def print_summary_table(results: list[TestResult]):
     table.add_column("Acc Δ",     justify="right")
 
     for r in results:
-        cg = r.summary("codegraph")
+        cg = r.summary("graphrag_code")
         bl = r.summary("baseline")
         s  = r.savings()
         if "error" in cg or "error" in bl or not s:
@@ -495,7 +495,7 @@ async def run_benchmark(args):
         ids = set(args.test_ids.split(","))
         all_cases = [t for t in all_cases if t["id"] in ids]
 
-    console.rule(f"[bold cyan]CodeGraph Benchmark Suite[/bold cyan]")
+    console.rule(f"[bold cyan]GraphRAG-Code Benchmark Suite[/bold cyan]")
     console.print(f"  Model:    {args.model}")
     console.print(f"  DB:       {args.db}")
     console.print(f"  Runs/arm: {args.runs}")
@@ -522,11 +522,11 @@ async def run_benchmark(args):
             category=tc["category"],
         )
 
-        # ── CodeGraph arm ────────────────────────────────────────────────────
-        console.print(f"  [cyan]→ Running CodeGraph arm ({args.runs} runs)...[/cyan]")
+        # ── GraphRAG-Code arm ────────────────────────────────────────────────────
+        console.print(f"  [cyan]→ Running GraphRAG-Code arm ({args.runs} runs)...[/cyan]")
         for run_idx in range(args.runs):
             console.print(f"    Run {run_idx+1}/{args.runs}", end=" ")
-            metrics = await run_codegraph_agent(
+            metrics = await run_graphrag_code_agent(
                 question=tc["question"],
                 seed_node=tc.get("seed_node"),
                 expected_keywords=tc.get("expected_keywords", []),
@@ -534,7 +534,7 @@ async def run_benchmark(args):
                 model=args.model,
                 api_key=api_key,
             )
-            result.codegraph_runs.append(metrics)
+            result.graphrag_code_runs.append(metrics)
             if metrics.error:
                 console.print(f"[red]ERROR: {metrics.error}[/red]")
             else:
@@ -595,12 +595,12 @@ async def run_benchmark(args):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="CodeGraph Benchmark Suite — đo token savings vs brute-force"
+        description="GraphRAG-Code Benchmark Suite — đo token savings vs brute-force"
     )
     parser.add_argument(
         "--db",
-        default="codegraph.sqlite",
-        help="Đường dẫn tới SQLite database của CodeGraph (default: codegraph.sqlite)"
+        default="graphrag_code.sqlite",
+        help="Đường dẫn tới SQLite database của GraphRAG-Code (default: graphrag_code.sqlite)"
     )
     parser.add_argument(
         "--codebase-dir",
@@ -648,7 +648,7 @@ def parse_args():
     parser.add_argument(
         "--skip-baseline",
         action="store_true",
-        help="Bỏ qua baseline arm, chỉ đo CodeGraph (dùng khi debug)"
+        help="Bỏ qua baseline arm, chỉ đo GraphRAG-Code (dùng khi debug)"
     )
     parser.add_argument(
         "--dry-run",

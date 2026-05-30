@@ -3,8 +3,8 @@ import rustworkx as rx
 import os
 import logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
-class CodeGraphEngine:
-    def __init__(self, db_path="codegraph.sqlite"):
+class GraphRAG-CodeEngine:
+    def __init__(self, db_path="graphrag_code.sqlite"):
         self.db_path = db_path
         self.graph = rx.PyDiGraph()
         # Mapping để đối chiếu giữa SQLite ID và Rustworkx Node Index
@@ -218,10 +218,10 @@ class CodeGraphEngine:
 
 if __name__ == "__main__":
     import sys
-    db_file = sys.argv[1] if len(sys.argv) > 1 else "codegraph.sqlite"
+    db_file = sys.argv[1] if len(sys.argv) > 1 else "graphrag_code.sqlite"
     seed_node = sys.argv[2] if len(sys.argv) > 2 else "process_checkout"
     
-    engine = CodeGraphEngine(db_file)
+    engine = GraphRAG-CodeEngine(db_file)
     engine.load_graph()
     
     context = engine.get_context_ppr(seed_name=seed_node, top_k=10)
