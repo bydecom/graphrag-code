@@ -81,11 +81,15 @@ class CodeGraphEngine:
 
     def _extract_source_code(self, file_path, start_line, end_line):
         """Hàm nội bộ: Đọc file và cắt đúng đoạn code cần thiết O(1) I/O"""
-        if not os.path.exists(file_path):
-            return "<Không tìm thấy file nguồn trên disk>"
+        # Resolve đường dẫn tuyệt đối (relative với thư mục chứa DB)
+        db_dir = os.path.dirname(os.path.abspath(self.db_path))
+        abs_file_path = file_path if os.path.isabs(file_path) else os.path.join(db_dir, file_path)
+
+        if not os.path.exists(abs_file_path):
+            return f"<Không tìm thấy file nguồn trên disk: {abs_file_path}>"
         
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(abs_file_path, 'r', encoding='utf-8') as f:
                 lines = f.read().splitlines()
                 # Tree-sitter là 0-indexed, slice của Python cắt đến end_line + 1
                 snippet = "\n".join(lines[start_line:end_line + 1])
@@ -213,7 +217,7 @@ class CodeGraphEngine:
 
 if __name__ == "__main__":
     import sys
-    db_file = sys.argv[1] if len(sys.argv) > 1 else "graph.sqlite"
+    db_file = sys.argv[1] if len(sys.argv) > 1 else "codegraph.sqlite"
     seed_node = sys.argv[2] if len(sys.argv) > 2 else "process_checkout"
     
     engine = CodeGraphEngine(db_file)
