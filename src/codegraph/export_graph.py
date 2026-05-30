@@ -56,5 +56,5 @@ def export_to_json(db_path="codegraph.sqlite", out_path="graph_data.json"):
 
 if __name__ == "__main__":
     import sys
-    db = sys.argv[1] if len(sys.argv) > 1 else "baychecker.sqlite"
+    db = sys.argv[1] if len(sys.argv) > 1 else "codegraph.sqlite"
     export_to_json(db_path=db)

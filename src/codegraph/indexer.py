@@ -1,10 +1,12 @@
+import logging
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 import sqlite3
 import hashlib
 import os
 import tree_sitter_python as tspython
 from tree_sitter import Language, Parser
 
-def init_db(db_path="graph.sqlite"):
+def init_db(db_path="codegraph.sqlite"):
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     # 1. Bảng quản lý File
@@ -104,7 +106,7 @@ def parse_python_file(file_path, conn):
         with open(file_path, "rb") as f:
             source_code = f.read()
     except Exception as e:
-        print(f"❌ [LỖI I/O] Bỏ qua file '{file_path}': {e}")
+        logging.info(f"❌ [LỖI I/O] Bỏ qua file '{file_path}': {e}")
         return
         
     checksum = compute_checksum(source_code)
@@ -114,22 +116,22 @@ def parse_python_file(file_path, conn):
     try:
         cursor.execute("SELECT id, checksum FROM files WHERE file_path = ?", (file_path,))
     except sqlite3.OperationalError as e:
-        print(f"❌ [LỖI DB] Database chưa được khởi tạo đúng cách: {e}")
+        logging.info(f"❌ [LỖI DB] Database chưa được khởi tạo đúng cách: {e}")
         return
 
     row = cursor.fetchone()
     if row:
         file_id, old_checksum = row
         if old_checksum == checksum:
-            print(f"[SKIP] '{file_path}' không có thay đổi (Checksum khớp).")
+            logging.info(f"[SKIP] '{file_path}' không có thay đổi (Checksum khớp).")
             return
         else:
-            print(f"[UPDATE] '{file_path}' đã thay đổi. Đang parse lại...")
+            logging.info(f"[UPDATE] '{file_path}' đã thay đổi. Đang parse lại...")
             # Xóa các symbols cũ (cascade xoá edges)
             cursor.execute("DELETE FROM symbols WHERE file_id = ?", (file_id,))
             cursor.execute("UPDATE files SET checksum = ?, last_parsed = CURRENT_TIMESTAMP WHERE id = ?", (checksum, file_id))
     else:
-        print(f"[NEW] Bắt đầu parse '{file_path}'...")
+        logging.info(f"[NEW] Bắt đầu parse '{file_path}'...")
         cursor.execute("INSERT INTO files (file_path, checksum) VALUES (?, ?)", (file_path, checksum))
         file_id = cursor.lastrowid
         
@@ -152,7 +154,7 @@ def parse_python_file(file_path, conn):
         (file_id, module_name, "module", 0, 0)
     )
     symbol_map[module_name] = cursor.lastrowid
-    print(f"  [+] Đỉnh: Module '{module_name}'")
+    logging.info(f"  [+] Đỉnh: Module '{module_name}'")
     
     # 3. Quét lần 1: Lưu tất cả các symbol (Node)
     for node, capture_name in capture_items:
@@ -175,7 +177,7 @@ def parse_python_file(file_path, conn):
             )
             symbol_id = cursor.lastrowid
             symbol_map[name] = symbol_id
-            print(f"  [+] Đỉnh: {kind.capitalize()} '{name}' (ID: {symbol_id}, Dòng: {start_line}-{end_line})")
+            logging.info(f"  [+] Đỉnh: {kind.capitalize()} '{name}' (ID: {symbol_id}, Dòng: {start_line}-{end_line})")
             
             # [FIX BUG 3]: Thêm cạnh 'contains' nếu hàm nằm trong class
             if kind == 'function':
@@ -186,7 +188,7 @@ def parse_python_file(file_path, conn):
                         "INSERT INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
                         (parent_id, name, 'contains')
                     )
-                    print(f"  [->] Cạnh: '{parent_name}' chứa hàm '{name}'")
+                    logging.info(f"  [->] Cạnh: '{parent_name}' chứa hàm '{name}'")
 
     BUILTIN_IGNORE = {'print', 'len', 'range', 'str', 'int', 'list', 'dict', 'isinstance', 'type', 'super', 'enumerate', 'zip'}
 
@@ -213,15 +215,15 @@ def parse_python_file(file_path, conn):
                     "INSERT OR IGNORE INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
                     (source_id, target_name, edge_type)
                 )
-                print(f"  [->] Cạnh: '{caller_name}' --[{edge_type}]--> '{target_name}'")
+                logging.info(f"  [->] Cạnh: '{caller_name}' --[{edge_type}]--> '{target_name}'")
 
     conn.commit()
-    print(f"✅ Hoàn tất lưu file '{file_path}' vào SQLite!\n")
+    logging.info(f"✅ Hoàn tất lưu file '{file_path}' vào SQLite!\n")
 
 import argparse
 
 def scan_directory(directory_path, conn):
-    print(f"🔍 Bắt đầu quét thư mục: {directory_path}")
+    logging.info(f"🔍 Bắt đầu quét thư mục: {directory_path}")
     py_files_count = 0
     for root, _, files in os.walk(directory_path):
         for file in files:
@@ -230,7 +232,7 @@ def scan_directory(directory_path, conn):
                 parse_python_file(file_path, conn)
                 py_files_count += 1
     
-    print(f"\n✅ Đã quét xong {py_files_count} file Python trong codebase.")
+    logging.info(f"\n✅ Đã quét xong {py_files_count} file Python trong codebase.")
 
 def main():
     cli_parser = argparse.ArgumentParser(description="Codebase Knowledge Graph Indexer")
@@ -238,12 +240,12 @@ def main():
     cli_parser.add_argument("--db", default="codegraph.sqlite", help="Đường dẫn tới file SQLite (mặc định: codegraph.sqlite)")
     args = cli_parser.parse_args()
 
-    print(f"Khởi tạo database: {args.db}")
+    logging.info(f"Khởi tạo database: {args.db}")
     conn = init_db(args.db)
     
     target_path = args.target_path
     if not os.path.exists(target_path):
-        print(f"❌ Lỗi: Không tìm thấy đường dẫn '{target_path}'")
+        logging.info(f"❌ Lỗi: Không tìm thấy đường dẫn '{target_path}'")
     else:
         if os.path.isdir(target_path):
             scan_directory(target_path, conn)

@@ -1,14 +1,11 @@
 {
   "mcpServers": {
-    "CodeGraph_Enterprise_V1": {
-      "command": "d:\\Workspace\\Project\\codebase_knowledge_graph\\codegraph_mvp\\venv312\\Scripts\\python.exe",
-      "args": [
-        "d:\\Workspace\\Project\\codebase_knowledge_graph\\codegraph_mvp\\mcp_server.py"
-      ],
+    "CodeGraph": {
+      "command": "codegraph-mcp",
       "env": {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
-        "CODEGRAPH_DB": "d:\\Workspace\\Project\\codebase_knowledge_graph\\codegraph_mvp\\baychecker.sqlite"
+        "CODEGRAPH_DB": "codegraph.sqlite"
       }
     }
   }

@@ -6,12 +6,12 @@ Thư mục này chứa các thiết lập để cắm **CodeGraph MVP** thẳng 
 
 1. **`aider_mcp_config.json`**: File cấu hình chứa khai báo stdio transport. File này xác định:
    - Command: Trỏ đúng vào `venv312` để chạy Python.
-   - Env: Bật cờ UTF-8 và trỏ đường dẫn tới `baychecker.sqlite`.
+   - Env: Bật cờ UTF-8 và trỏ đường dẫn tới `codegraph.sqlite`.
 2. **`run_aider.ps1`**: Script Powershell tự động khởi chạy Aider kèm với cờ `--mcp`.
 
 ## Hướng dẫn sử dụng:
 
-1. Đảm bảo bạn đã chạy `indexer.py` để sinh ra file DB `baychecker.sqlite` (cập nhật mới nhất).
+1. Đảm bảo bạn đã chạy `indexer.py` để sinh ra file DB `codegraph.sqlite` (cập nhật mới nhất).
 2. Mở Terminal (Powershell), di chuyển vào thư mục `integration\`:
    ```powershell
    cd d:\Workspace\Project\codebase_knowledge_graph\codegraph_mvp\integration

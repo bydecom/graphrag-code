@@ -2,7 +2,7 @@
 benchmark_suite.py — CodeGraph vs Brute-Force Benchmark
 =========================================================
 Đo lường thực tế: Token cost, latency, tool calls, accuracy
-Chạy: python benchmark_suite.py --db baychecker.sqlite --runs 3
+Chạy: python benchmark_suite.py --db codegraph.sqlite --runs 3
 
 Yêu cầu:
     pip install litellm mcp tiktoken rich
