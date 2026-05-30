@@ -8,7 +8,7 @@
 Năm 2026, ném toàn bộ raw files vào AI Agent là không đủ. Việc này gây lãng phí token và làm tăng tỷ lệ Hallucination (ảo giác).  
 CodeGraph giải quyết bài toán này bằng cách kết hợp **Abstract Syntax Tree (AST)** với thuật toán **Bidirectional Personalized PageRank (PPR)** chạy trên in-memory graph siêu tốc.
 
-## 📊 Benchmark (baychecker codebase, 3 test cases)
+## 📊 Benchmark (Small test codebase, 3 test cases)
 
 | Query type        | Token savings | Accuracy vs baseline |
 |-------------------|--------------|---------------------|
@@ -32,7 +32,10 @@ Dự án hiện đang hỗ trợ chạy nguyên bản thông qua hệ sinh thái
 
 ```bash
 # Cài đặt từ mã nguồn
-pip install .
+pip install -e .
+
+# Parse source code ra Graph (SQLite)
+codegraph-index --db codegraph.sqlite --path .
 
 # Khai báo API Key (Khuyên dùng Gemini 1.5 Pro / Flash)
 export GEMINI_API_KEY="your-api-key"
