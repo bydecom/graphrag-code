@@ -8,6 +8,14 @@
 In 2026, dumping entire raw files into LLM Agents is highly inefficient, leading to high token costs and increased hallucination rates.  
 CodeGraph solves this by combining **Abstract Syntax Tree (AST)** parsing with a **Bidirectional Personalized PageRank (B-PPR)** algorithm running on an optimized, in-memory graph.
 
+```mermaid
+graph TD
+    Source[Source Code] -->|"Tree-sitter AST"| Indexer[SQLite DB]
+    Indexer -->|"In-Memory Load"| Engine[rustworkx Graph]
+    Engine -->|"Bidirectional PPR"| MCP[FastMCP Server]
+    MCP -->|"stdio Protocol"| Client[Cursor Agent]
+```
+
 ## 📊 Benchmark (Small test codebase, 3 test cases)
 
 | Query Type        | Token Savings | Accuracy vs Baseline |
