@@ -1,19 +1,19 @@
-# GraphRAG-Code - MCP Setup cho Cursor / Claude
+# GraphRAG-Code - MCP Setup for Cursor / Claude
 
-Để tích hợp GraphRAG-Code vào môi trường phát triển của bạn dưới dạng một MCP Server, hãy cấu hình theo hướng dẫn sau.
+To integrate GraphRAG-Code into your development environment as an MCP Server, follow the configuration steps below.
 
-Lưu ý: Bạn phải cài đặt GraphRAG-Code thông qua `pip install -e .` trước khi thực hiện bước này để hệ thống nhận diện được lệnh `graphrag-code-mcp`.
+Note: You must install GraphRAG-Code via `pip install -e .` before performing this step so the system can recognize the `graphrag-code-mcp` command.
 
-## Dành cho Cursor IDE
-1. Mở Cài đặt (Settings) -> Features -> MCP Servers
-2. Chọn "Add New MCP Server"
-3. Thiết lập như sau:
+## For Cursor IDE
+1. Open Settings -> Features -> MCP Servers
+2. Select "Add New MCP Server"
+3. Configure it as follows:
    - Name: `GraphRAG-Code`
    - Type: `command`
    - Command: `graphrag-code-mcp`
 
-## Dành cho Claude Desktop
-Thêm đoạn JSON sau vào file cấu hình của Claude (`claude_desktop_config.json`):
+## For Claude Desktop
+Add the following JSON block to your Claude configuration file (`claude_desktop_config.json`):
 
 ```json
 {
@@ -30,4 +30,4 @@ Thêm đoạn JSON sau vào file cấu hình của Claude (`claude_desktop_confi
 }
 ```
 
-*Lưu ý: Nếu bạn để database ở vị trí khác, hãy sửa `CODEGRAPH_DB` trỏ tới đường dẫn tuyệt đối của file `.sqlite` đó.*
+*Note: If your database is located elsewhere, modify `CODEGRAPH_DB` to point to the absolute path of your `.sqlite` file.*

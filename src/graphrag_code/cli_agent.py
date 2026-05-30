@@ -9,12 +9,12 @@ import litellm
 async def run_cli_agent():
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print("[!] Lỗi: Hãy set biến môi trường GEMINI_API_KEY trước khi chạy.")
-        print("    Trong CMD: set GEMINI_API_KEY=AIzaSy...")
-        print("    Trong Powershell: $env:GEMINI_API_KEY=\"AIzaSy...\"")
+        print("[!] Error: Please set the GEMINI_API_KEY environment variable before running.")
+        print("    In CMD: set GEMINI_API_KEY=AIzaSy...")
+        print("    In Powershell: $env:GEMINI_API_KEY=\"AIzaSy...\"")
         return
         
-    print("[🤖 GraphRAG-Code Agent] Đang khởi động 'The People's Agent'...")
+    print("[🤖 GraphRAG-Code Agent] Booting up 'The People's Agent'...")
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
@@ -29,9 +29,9 @@ async def run_cli_agent():
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            print("[🤖 GraphRAG-Code Agent] Đã kết nối MCP Server thành công!")
+            print("[🤖 GraphRAG-Code Agent] Successfully connected to MCP Server!")
             
-            # 1. Trích xuất Schema tự động từ MCP Server
+            # 1. Automatically extract Schema from MCP Server
             mcp_tools = await session.list_tools()
             llm_tools = []
             for t in mcp_tools.tools:
@@ -47,31 +47,31 @@ async def run_cli_agent():
             messages = [
                 {
                     "role": "system", 
-                    "content": "Bạn là AI Software Architect đẳng cấp. Đang làm việc với một repo codebase lớn.\n"
-                               "Quy trình bắt buộc trước khi code/phân tích:\n"
-                               "1. LUÔN dùng 'list_symbols' để xem tổng quan file/module.\n"
-                               "2. LUÔN dùng 'get_callers' để đánh giá Bán Kính Sát Thương (Blast Radius).\n"
-                               "3. LUÔN dùng 'get_pruned_context' để đọc mã nguồn chính xác nhất."
+                    "content": "You are a world-class AI Software Architect working on a large codebase.\n"
+                               "Mandatory procedure before analyzing/coding:\n"
+                               "1. ALWAYS use 'list_symbols' for an overview of the file/module.\n"
+                               "2. ALWAYS use 'get_callers' to evaluate the Blast Radius.\n"
+                               "3. ALWAYS use 'get_pruned_context' to read the most precise source code blocks."
                 }
             ]
             
             print("="*60)
-            print("🚀 CHÀO MỪNG TỚI CODEGRAPH CLI AGENT (Powered by Gemini) 🚀")
+            print("🚀 WELCOME TO GRAPHRAG-CODE CLI AGENT (Powered by Gemini) 🚀")
             print("="*60)
-            print(" Gõ 'exit' hoặc 'q' để thoát. Bắt đầu chat với Agent về dự án của bạn.\n")
+            print(" Type 'exit' or 'q' to quit. Start chatting with the Agent about your project.\n")
             
             while True:
                 try:
-                    user_input = input("[👨‍💻 Bạn]: ")
+                    user_input = input("[👨‍💻 You]: ")
                     if user_input.strip().lower() in ['quit', 'exit', 'q']:
                         break
                     if not user_input.strip(): continue
                     
                     messages.append({"role": "user", "content": user_input})
                     
-                    # Agent Loop (Xử lý Tool Calling Chain of Thought)
+                    # Agent Loop (Handling Tool Calling Chain of Thought)
                     while True:
-                        print(" [⏳ Agent đang suy nghĩ...]", end="\r")
+                        print(" [⏳ Agent is thinking...]", end="\r")
                         response = await litellm.acompletion(
                             model="gemini/gemini-2.5-flash-lite",
                             messages=messages,
@@ -80,18 +80,18 @@ async def run_cli_agent():
                         )
                         
                         msg = response.choices[0].message
-                        # Xoá trường trống để tránh lỗi strict format của LLM
+                        # Remove empty fields to avoid strict LLM format errors
                         msg_dict = msg.model_dump(exclude_none=True)
                         messages.append(msg_dict)
                         
                         if msg.tool_calls:
-                            print(" "*50, end="\r") # Xóa dòng waiting
+                            print(" "*50, end="\r") # Clear waiting line
                             for tool_call in msg.tool_calls:
                                 func_name = tool_call.function.name
                                 args = json.loads(tool_call.function.arguments)
-                                print(f"  [🔧 CẤP QUYỀN TOOL]: Đang thực thi `{func_name}` với tham số: {args}")
+                                print(f"  [🔧 TOOL EXECUTION]: Running `{func_name}` with args: {args}")
                                 
-                                # Giao tiếp qua giao thức MCP thực sự xuống Não Đồ Thị
+                                # Communicate via the real MCP protocol down to the Graph Engine
                                 tool_result = await session.call_tool(func_name, arguments=args)
                                 result_text = "\n".join([c.text for c in tool_result.content if c.type == "text"])
                                 
@@ -101,24 +101,24 @@ async def run_cli_agent():
                                     "name": func_name,
                                     "content": result_text
                                 })
-                            # Sau khi Tools chạy xong, tự động quay lại vòng lặp báo cáo cho Gemini
+                            # Loop back to report to Gemini after Tools finish executing
                         else:
-                            # Không gọi tool nữa thì in câu trả lời text
+                            # If no tools called, print text response
                             print(" "*50, end="\r") 
                             print(f"\n[🤖 Agent]:\n{msg.content}\n")
                             break
                             
                 except KeyboardInterrupt:
-                    print("\n[👋] Hẹn gặp lại!")
+                    print("\n[👋] See you later!")
                     break
                 except Exception as e:
-                    print(f"\n[!] Lỗi đứt gãy luồng: {str(e)}")
+                    print(f"\n[!] Fatal error: {str(e)}")
                     break
 
 def main():
-    # Tắt log thừa để giao diện Terminal sạch sẽ
+    # Suppress debug info for clean terminal UI
     litellm.suppress_debug_info = True 
-    # Sửa lỗi chạy async event loop trên Windows
+    # Fix async event loop execution on Windows
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(run_cli_agent())
