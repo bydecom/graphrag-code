@@ -3,7 +3,7 @@ import rustworkx as rx
 import os
 
 class CodeGraphEngine:
-    def __init__(self, db_path="graph.sqlite"):
+    def __init__(self, db_path="codegraph.sqlite"):
         self.db_path = db_path
         self.graph = rx.PyDiGraph()
         # Mapping để đối chiếu giữa SQLite ID và Rustworkx Node Index
