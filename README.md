@@ -1,7 +1,7 @@
 # CodeGraph Enterprise 🚀
 **Python-native Code Knowledge Graph với thuật toán Bidirectional PPR**
 
-*Cách duy nhất tìm được cả upstream callers lẫn downstream dependencies trong một query, kèm source code snippet thật thay vì chỉ metadata.*
+*Một phương pháp hiệu quả để tìm cả upstream callers lẫn downstream dependencies trong một query, kết hợp Bidirectional PPR để trích xuất source code snippet thật thay vì chỉ metadata.*
 
 ## Tại sao lại là CodeGraph? (The "Why")
 
@@ -18,7 +18,7 @@ CodeGraph giải quyết bài toán này bằng cách kết hợp **Abstract Syn
 *PPR seed resolution đang được cải thiện cho các hàm nội bộ (private methods / _method) và overhead latency có thể tăng ~20% ở codebase nhỏ, bù lại sẽ phát huy sức mạnh ở codebase lớn.
 
 ### 🔥 Điểm khác biệt cốt lõi (Core Differentiators) so với GitNexus / Market:
-- **Bidirectional PPR:** Tự động tìm cả "Downstream Dependencies" (ai gọi ai) và "Upstream Callers" (Blast Radius) chỉ trong 1 Query. Trọng số 0.7 cho backward context giúp LLM có bức tranh toàn cảnh.
+- **Bidirectional PPR Merge:** Một kỹ thuật học thuật mở rộng (extend) từ dòng nghiên cứu Repo Map, kết hợp Forward PPR và Backward PPR (trên Reversed Graph) với weight=0.7 để tìm cả Blast Radius và Implementation Context trong 1 query duy nhất.
 - **Source Code Extraction:** Bơm trực tiếp code thật (snippet) vào LLM thay vì chỉ ném metadata.
 - **Interface Expansion (P0-2):** Tự động truy xuất các siblings và parent class thông qua keyword `extends`.
 - **Python-Native:** Best-in-class cho hệ sinh thái Python (FastAPI, Django, Data Science).
