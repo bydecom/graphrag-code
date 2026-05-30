@@ -4,7 +4,7 @@ import sqlite3
 import hashlib
 import os
 import tree_sitter_python as tspython
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Parser, Query, QueryCursor
 
 def init_db(db_path="codegraph.sqlite"):
     conn = sqlite3.connect(db_path)
@@ -81,7 +81,7 @@ QUERY_SCM = """
 (import_statement name: (dotted_name) @edge.import)
 (import_from_statement name: (dotted_name) @edge.import)
 """
-query = PY_LANGUAGE.query(QUERY_SCM)
+query = Query(PY_LANGUAGE, QUERY_SCM)
 
 def compute_checksum(source_code: bytes) -> str:
     return hashlib.md5(source_code).hexdigest()
@@ -137,7 +137,8 @@ def parse_python_file(file_path, conn):
         
     # 2. Parse source code ra AST
     tree = parser.parse(source_code)
-    captures = query.captures(tree.root_node)
+    qc = QueryCursor(query)
+    captures = qc.captures(tree.root_node)
     
     # Chuẩn hóa capture API cho các version tree-sitter khác nhau
     if isinstance(captures, dict):
