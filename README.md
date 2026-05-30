@@ -1,63 +1,62 @@
 # CodeGraph 🚀
-**Python-native Code Knowledge Graph với thuật toán Bidirectional PPR**
+**Python-native Code Knowledge Graph using Bidirectional PPR**
 
-*Một phương pháp hiệu quả để tìm cả upstream callers lẫn downstream dependencies trong một query, kết hợp Bidirectional PPR để trích xuất source code snippet thật thay vì chỉ metadata.*
+*An efficient approach to retrieve both upstream callers and downstream dependencies within a single query, extracting exact source code blocks rather than just metadata.*
 
-## Tại sao lại là CodeGraph? (The "Why")
+## Why CodeGraph? (The "Why")
 
-Năm 2026, ném toàn bộ raw files vào AI Agent là không đủ. Việc này gây lãng phí token và làm tăng tỷ lệ Hallucination (ảo giác).  
-CodeGraph giải quyết bài toán này bằng cách kết hợp **Abstract Syntax Tree (AST)** với thuật toán **Bidirectional Personalized PageRank (PPR)** chạy trên in-memory graph siêu tốc.
+In 2026, dumping entire raw files into LLM Agents is highly inefficient, leading to high token costs and increased hallucination rates.  
+CodeGraph solves this by combining **Abstract Syntax Tree (AST)** parsing with a **Bidirectional Personalized PageRank (B-PPR)** algorithm running on an optimized, in-memory graph.
 
 ## 📊 Benchmark (Small test codebase, 3 test cases)
 
-| Query type        | Token savings | Accuracy vs baseline |
-|-------------------|--------------|---------------------|
-| Architecture Q&A  | ~89%         | Equal or better     |
-| Blast radius      | ~97%         | Needs improvement*  |
+| Query Type        | Token Savings | Accuracy vs Baseline |
+|-------------------|---------------|----------------------|
+| Architecture Q&A  | ~89%          | Equal or better      |
+| Blast Radius      | ~97%          | Needs improvement*   |
 
-*PPR seed resolution đang được cải thiện cho các hàm nội bộ (private methods / _method) và overhead latency có thể tăng ~20% ở codebase nhỏ, bù lại sẽ phát huy sức mạnh ở codebase lớn.
+*\*PPR seed resolution is currently being tuned for internal methods (private functions beginning with `_`). While overhead latency may increase by ~20% on very small codebases, B-PPR shines on large-scale codebases.*
 
-### 🔥 Điểm khác biệt cốt lõi (Core Differentiators) so với GitNexus / Market:
-- **Bidirectional PPR Merge:** Một kỹ thuật học thuật mở rộng (extend) từ dòng nghiên cứu Repo Map, kết hợp Forward PPR và Backward PPR (trên Reversed Graph) với weight=0.7 để tìm cả Blast Radius và Implementation Context trong 1 query duy nhất.
-- **Source Code Extraction:** Bơm trực tiếp code thật (snippet) vào LLM thay vì chỉ ném metadata.
-- **Interface Expansion (P0-2):** Tự động truy xuất các siblings và parent class thông qua keyword `extends`.
-- **Python-Native:** Tối ưu hóa cho hệ sinh thái Python (FastAPI, Django, Data Science).
-- **Zero-Ops MCP Server:** Chuẩn giao thức Model Context Protocol. Cắm thẳng vào **Cursor** hoặc **Claude Desktop** trong 3 giây.
+### 🔥 Core Differentiators:
+- **Bidirectional PPR Merge:** An academic extension of the Repo Map concept. It merges Forward PPR (downstream dependencies) and Backward PPR (on the Reversed Graph) with a `backward_weight=0.7` to evaluate both blast radius and implementation context in a single query.
+- **Source Code Block Extraction:** Injects exact code blocks (snippets) into the LLM context using AST coordinates rather than just spitting out symbol metadata.
+- **Interface Expansion (P0-2):** Traversing interface boundaries automatically via inheritance/dependency mapping (e.g., tracking consumers of implemented classes).
+- **Python-Native:** Highly optimized for the Python ecosystem (FastAPI, Django, Data Science).
+- **Zero-Ops MCP Server:** Complies with the Model Context Protocol (MCP). Plugs directly into **Cursor** or **Claude Desktop** in seconds.
 
 ---
 
-## 🛠 Cài đặt (Quick Start)
+## 🛠 Quick Start
 
-Dự án hiện đang hỗ trợ chạy nguyên bản thông qua hệ sinh thái Python 3.10+:
+To run the pipeline natively using Python 3.10+:
 
 ```bash
-# Cài đặt từ mã nguồn
+# Install from source
 pip install -e .
 
-# Parse source code ra Graph (SQLite)
-codegraph-index --db codegraph.sqlite --path .
+# Parse the codebase and generate the Knowledge Graph
+codegraph-index --db codegraph.sqlite src
 
-# Khai báo API Key (Khuyên dùng Gemini 1.5 Pro / Flash)
+# Set your LLM API Key (Gemini recommended)
 export GEMINI_API_KEY="your-api-key"
 
-# Khởi chạy Agent thông minh ngay trên Terminal
+# Launch the interactive Terminal Agent
 codegraph-agent
 ```
 
 ---
 
-## 📊 Tích hợp Native IDE
-Nếu bạn là tín đồ của **Cursor IDE** hoặc **Claude Desktop**, CodeGraph cung cấp sẵn file cấu hình để biến IDE của bạn thành siêu AI.
-👉 Xem hướng dẫn chi tiết tại `docs/CURSOR_CLAUDE_INTEGRATION.md`
+## 📊 Native IDE Integration
+If you use **Cursor IDE** or **Claude Desktop**, CodeGraph exposes standard Model Context Protocol (MCP) tools out-of-the-box.  
+👉 See detailed instructions in [docs/CURSOR_CLAUDE_INTEGRATION.md](docs/CURSOR_CLAUDE_INTEGRATION.md).
 
 ---
 
-## 🏗 Kiến trúc (Architecture)
-Hệ thống sử dụng `tree-sitter` để bóc tách codebase Python thành một mạng lưới đỉnh/cạnh, sau đó nạp vào bộ nhớ RAM bằng thư viện lõi C-backend `rustworkx` để tăng tốc độ chạy thuật toán.
+## 🏗 Architecture
+The system utilizes `tree-sitter` to parse Python files into a graph of syntax nodes, stores it incrementally using SQLite, and loads it into a high-performance in-memory C-backed graph (`rustworkx`) to run PPR calculations in milliseconds.
 
-## ⚠️ Known Limitations (Sự Thật Về Hệ Thống)
-- Hiện tại CodeGraph chỉ hỗ trợ hệ sinh thái Python (Multi-language là Roadmap cho các phiên bản tiếp theo).
-- **Latency overhead ~20-25% ở codebase nhỏ** (< 20 files). Việc này là do chi phí khởi động MCP Server và nạp In-memory Graph. Tuy nhiên, nó sẽ phát huy sức mạnh vượt trội và đảo chiều ở các codebase khổng lồ.
-- Thuật toán **PPR Seed Resolution** đối với các hàm nội bộ (private methods bắt đầu bằng `_`) đôi khi cần độ chính xác cao hơn, đang được nhóm phát triển tinh chỉnh.
-- Chưa có tính năng Community Detection (Leiden algorithm) để gom cụm module lớn (Planned cho V2).
-
+## ⚠️ Known Limitations
+- Currently, CodeGraph natively supports Python codebases (multi-language support is planned for future releases).
+- **Latency overhead of ~20-25% on tiny codebases** (<20 files) due to MCP initialization and in-memory graph loading. This is compensated by massive performance gains and token savings on larger codebases.
+- Heuristics for private methods (beginning with `_`) are undergoing active refinement.
+- Dynamic import, decorator, and metaclass analysis are not fully resolved at the AST syntax level without static type resolution.

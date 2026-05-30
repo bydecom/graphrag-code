@@ -4,18 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [0.1.0] - 2026-05-31
 ### Added
-- **Core Engine**: `CodeGraphEngine` với thuật toán Bidirectional Personalized PageRank (B-PPR) để cắt tỉa (pruning) AST tokens lên đến 91%.
-- **Indexer**: Hỗ trợ Incremental Parsing mã nguồn Python thông qua `tree-sitter` và SQLite MD5 Checksums.
-- **MCP Server**: Triển khai giao thức Model Context Protocol (`codegraph-mcp`) tương thích Cursor, Claude Desktop, Aider.
-- **CLI Agent**: Cung cấp `codegraph-agent` để chat trực tiếp với codebase.
-- **Benchmark Suite**: Script đánh giá thực tế token savings, latency và accuracy.
+- **Core Engine**: `CodeGraphEngine` featuring a Bidirectional Personalized PageRank (B-PPR) algorithm to achieve up to 91% token savings.
+- **Indexer**: Incremental static parsing of Python codebase via `tree-sitter` and SQLite MD5 checksum tracking.
+- **MCP Server**: Implemented Anthropic's Model Context Protocol (`codegraph-mcp`) compatible with Cursor, Claude Desktop, and Aider.
+- **CLI Agent**: Out-of-the-box terminal interface (`codegraph-agent`) to chat directly with your codebase.
+- **Benchmark Suite**: Quantitative evaluation script assessing token savings, latency, and retrieval accuracy.
 
 ### Changed
-- Cấu trúc lại dự án tuân theo tiêu chuẩn Packaging (PIP package `codegraph-core`).
+- Refactored the core project structure into a clean, packageable format (`codegraph-core`).
 
 ### Fixed
-- Lỗi vòng lặp vô tận (Infinite recursive logic) khi gọi các hàm cross-file.
-- Tự động bỏ qua các build-in functions (`print`, `len`...) để tránh nhiễu đồ thị.
-- Tràn RAM khi export đồ thị lớn nhờ streaming SQLite cursor thay vì fetchall.
-- **[CRITICAL]** Fix tương thích API `captures()` của `tree-sitter` v0.23+ thông qua class `QueryCursor`.
-- Tự động resolve đường dẫn tuyệt đối (Absolute Path) trong `graph_engine.py` giúp trích xuất mã nguồn ổn định khi chạy MCP qua Cursor/Aider.
+- Resolved infinite recursion loops when traversing deep cross-file dependencies.
+- Automatically bypassed built-in utility functions (`print`, `len` etc.) to minimize graph noise.
+- Fixed RAM exhaustion during large-scale graph exports via SQLite streaming cursors.
+- **[CRITICAL]** Resolved compilation and query issues with `tree-sitter>=0.23` APIs by migrating to `QueryCursor`.
+- Implemented **Dynamic Path Resolution** in `graph_engine.py` to fix the "Source file not found" error during IDE-hosted MCP execution.
