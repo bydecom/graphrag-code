@@ -17,3 +17,5 @@ All notable changes to this project will be documented in this file.
 - Lỗi vòng lặp vô tận (Infinite recursive logic) khi gọi các hàm cross-file.
 - Tự động bỏ qua các build-in functions (`print`, `len`...) để tránh nhiễu đồ thị.
 - Tràn RAM khi export đồ thị lớn nhờ streaming SQLite cursor thay vì fetchall.
+- **[CRITICAL]** Fix tương thích API `captures()` của `tree-sitter` v0.23+ thông qua class `QueryCursor`.
+- Tự động resolve đường dẫn tuyệt đối (Absolute Path) trong `graph_engine.py` giúp trích xuất mã nguồn ổn định khi chạy MCP qua Cursor/Aider.
