@@ -6,16 +6,13 @@ def export_to_json(db_path="graphrag_code.sqlite", out_path="graph_data.json"):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Lấy danh sách nodes
-    cursor.execute("SELECT id, name, kind, file_id FROM symbols")
-    symbols = cursor.fetchall()
-    
-    # Map file_id -> tên file
+    # Map file_id -> file name
     cursor.execute("SELECT id, file_path FROM files")
     files = {row[0]: row[1].split('\\')[-1].split('/')[-1] for row in cursor.fetchall()}
     
     nodes = []
-    for sym_id, name, kind, file_id in symbols:
+    # O(1) Memory I/O: Use Cursor Iteration instead of fetchall() to avoid RAM overflow
+    for sym_id, name, kind, file_id in cursor.execute("SELECT id, name, kind, file_id FROM symbols"):
         file_name = files.get(file_id, "Unknown")
         
         if kind == 'module':
@@ -35,8 +32,8 @@ def export_to_json(db_path="graphrag_code.sqlite", out_path="graph_data.json"):
             "title": f"File: {file_name} | Type: {kind}"
         })
         
-    # Lấy danh sách edges từ SQL VIEW trung tâm (DRY — P1-3)
-    # Tối ưu O(1) Memory I/O: Sử dụng Cursor Iteration thay vì fetchall() để tránh tràn RAM khi có >10K cạnh
+    # Get edges from central SQL VIEW (DRY — P1-3)
+    # Optimized O(1) Memory I/O
     edges = []
     for src_id, tgt_id, edge_type in cursor.execute("SELECT source_id, target_id, edge_type FROM resolved_edges"):
         edges.append({
@@ -51,10 +48,15 @@ def export_to_json(db_path="graphrag_code.sqlite", out_path="graph_data.json"):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(graph_data, f, ensure_ascii=False, indent=2)
         
-    print(f"✅ Đã xuất {len(nodes)} nodes và {len(edges)} edges ra file {out_path}!")
+    print(f"✅ Successfully exported {len(nodes)} nodes and {len(edges)} edges to {out_path}!")
     conn.close()
 
+def main():
+    parser = argparse.ArgumentParser(description="Export Codebase Knowledge Graph to JSON")
+    parser.add_argument("--db", default="graphrag_code.sqlite", help="Path to SQLite database")
+    parser.add_argument("--out", default="graph_data.json", help="Path to output JSON")
+    args = parser.parse_args()
+    export_to_json(args.db, args.out)
+
 if __name__ == "__main__":
-    import sys
-    db = sys.argv[1] if len(sys.argv) > 1 else "graphrag_code.sqlite"
-    export_to_json(db_path=db)
+    main()
