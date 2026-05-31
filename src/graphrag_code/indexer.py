@@ -24,12 +24,19 @@ def init_db(db_path="graphrag_code.sqlite"):
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         file_id INTEGER NOT NULL,
         name TEXT NOT NULL,
+        short_name TEXT NOT NULL,
         kind TEXT NOT NULL,
         start_line INTEGER NOT NULL,
         end_line INTEGER NOT NULL,
         FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
     )
     """)
+    # Schema migration for existing DB
+    try:
+        c.execute("ALTER TABLE symbols ADD COLUMN short_name TEXT")
+        c.execute("UPDATE symbols SET short_name = name WHERE short_name IS NULL")
+    except sqlite3.OperationalError:
+        pass
     # 3. Edges Table - UNIQUE constraint prevents duplicate edges
     c.execute("""
     CREATE TABLE IF NOT EXISTS edges (
@@ -44,6 +51,7 @@ def init_db(db_path="graphrag_code.sqlite"):
     c.execute("CREATE INDEX IF NOT EXISTS idx_files_path ON files(file_path)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_symbols_short_name ON symbols(short_name)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_name)")
     # Central SQL VIEW: resolves cross-file edges (DRY approach for graph_engine + export)
@@ -52,7 +60,7 @@ def init_db(db_path="graphrag_code.sqlite"):
     CREATE VIEW IF NOT EXISTS resolved_edges AS
         SELECT e.source_id, s.id AS target_id, e.edge_type
         FROM edges e
-        INNER JOIN symbols s ON e.target_name = s.name
+        INNER JOIN symbols s ON e.target_name = s.short_name
         INNER JOIN symbols src ON e.source_id = src.id
         WHERE s.file_id = src.file_id
            OR e.edge_type IN ('import', 'extends')
@@ -86,18 +94,29 @@ query = Query(PY_LANGUAGE, QUERY_SCM)
 def compute_checksum(source_code: bytes) -> str:
     return hashlib.md5(source_code).hexdigest()
 
+def get_fqn(node, source_code: bytes) -> str:
+    """Traverse up the AST to build Fully Qualified Name (e.g., ClassName.method_name)."""
+    parts = []
+    curr = node.parent
+    while curr is not None:
+        if curr.type in ('function_definition', 'class_definition'):
+            for child in curr.children:
+                if child.type == 'identifier':
+                    parts.append(source_code[child.start_byte:child.end_byte].decode('utf8'))
+                    break
+        curr = curr.parent
+    return ".".join(reversed(parts)) if parts else source_code[node.start_byte:node.end_byte].decode('utf8')
+
 def find_enclosing_symbol(node, source_code: bytes, module_name: str) -> str:
     """
-    Traverse up the AST to find the enclosing function/class name.
-    Complexity: O(Tree Depth) ~ O(1) in practice.
+    Traverse up the AST to find the FQN of the enclosing function/class.
     """
     curr = node.parent
     while curr is not None:
         if curr.type in ('function_definition', 'class_definition'):
-            # Find identifier child to extract symbol name
             for child in curr.children:
                 if child.type == 'identifier':
-                    return source_code[child.start_byte:child.end_byte].decode('utf8')
+                    return get_fqn(child, source_code)
         curr = curr.parent
     return module_name
 
@@ -151,8 +170,8 @@ def parse_python_file(file_path, conn):
     # Register Module node representing the file
     module_name = f"<module: {os.path.basename(file_path)}>"
     cursor.execute(
-        "INSERT INTO symbols (file_id, name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?)",
-        (file_id, module_name, "module", 0, 0)
+        "INSERT INTO symbols (file_id, name, short_name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)",
+        (file_id, module_name, module_name, "module", 0, 0)
     )
     symbol_map[module_name] = cursor.lastrowid
     logging.info(f"  [+] Node: Module '{module_name}'")
@@ -160,7 +179,8 @@ def parse_python_file(file_path, conn):
     # 3. First Pass: Store all Symbols (Nodes)
     for node, capture_name in capture_items:
         if capture_name in ('symbol.function', 'symbol.class'):
-            name = source_code[node.start_byte:node.end_byte].decode('utf8')
+            short_name = source_code[node.start_byte:node.end_byte].decode('utf8')
+            name = get_fqn(node, source_code)
             kind = capture_name.split('.')[1]
             
             # Use block node (parent) instead of the bare identifier node to capture full coordinates
@@ -173,8 +193,8 @@ def parse_python_file(file_path, conn):
             if end_line is None: end_line = block_node.end_point[0]
             
             cursor.execute(
-                "INSERT INTO symbols (file_id, name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?)",
-                (file_id, name, kind, start_line, end_line)
+                "INSERT INTO symbols (file_id, name, short_name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)",
+                (file_id, name, short_name, kind, start_line, end_line)
             )
             symbol_id = cursor.lastrowid
             symbol_map[name] = symbol_id
