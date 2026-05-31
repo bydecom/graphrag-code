@@ -94,6 +94,14 @@ class GraphRAGCodeEngine:
         
         logging.info(f"[-] Successfully loaded Graph: {self.graph.num_nodes()} Nodes, {self.graph.num_edges()} Edges (+ reversed graph).")
 
+    def get_node_index(self, symbol_name: str):
+        """O(1) resolve symbol name to rustworkx index with duplicate handling."""
+        idx = self.name_to_rx_idx.get(symbol_name)
+        if isinstance(idx, list):
+            logging.warning(f"[!] Ambiguous symbol '{symbol_name}': found {len(idx)} matches. Using first occurrence.")
+            return idx[0]
+        return idx
+
     def _extract_source_code(self, file_path, start_line, end_line):
         """Internal helper: Read the file and slice the exact code block (O(1) I/O)"""
         # Resolve absolute paths (relative to the directory containing the SQLite DB)
@@ -104,7 +112,7 @@ class GraphRAGCodeEngine:
             return f"<Source file not found on disk: {abs_file_path}>"
         
         try:
-            with open(abs_file_path, 'r', encoding='utf-8') as f:
+            with open(abs_file_path, 'r', encoding='utf-8', errors='replace') as f:
                 lines = f.read().splitlines()
                 # Tree-sitter is 0-indexed, Python slice goes to end_line + 1
                 snippet = "\n".join(lines[start_line:end_line + 1])
@@ -149,15 +157,11 @@ class GraphRAGCodeEngine:
                              Default lowered to 0.2 to prevent upstream callers from dominating 
                              downstream context (fixes Issue 2).
         """
-        # Issue 4 & B: O(1) Symbol Lookup with Duplicate Handling
-        seed_idx = self.name_to_rx_idx.get(seed_name)
-        if isinstance(seed_idx, list):
-            logging.warning(f"[!] Ambiguous symbol '{seed_name}': found {len(seed_idx)} matches. Using first occurrence.")
-            seed_idx = seed_idx[0]
+        seed_idx = self.get_node_index(seed_name)
                 
         if seed_idx is None:
             logging.warning(f"[!] Symbol '{seed_name}' not found in the Graph.")
-            return []
+            return None
 
         logging.info(f"\n[🚀] Launching Bidirectional PPR from Seed: '{seed_name}'")
 
@@ -176,12 +180,12 @@ class GraphRAGCodeEngine:
         weight_fn = lambda x: x["weight"] if isinstance(x, dict) else float(x)
 
         # Forward PPR: downstream dependencies
-        forward_scores = rx.pagerank(
+        forward_scores = dict(rx.pagerank(
             self.graph, 
             alpha=0.85, 
             weight_fn=weight_fn,
             personalization=personalization
-        )
+        ))
 
         # Backward PPR: upstream consumers (runs on reversed graph)
         backward_personalization = {n: 0.0 for n in self.reversed_graph.node_indices()}
@@ -189,12 +193,12 @@ class GraphRAGCodeEngine:
             if n in backward_personalization:
                 backward_personalization[n] = 1.0 / len(expanded_seeds)
                 
-        backward_scores = rx.pagerank(
+        backward_scores = dict(rx.pagerank(
             self.reversed_graph,
             alpha=0.85,
             weight_fn=weight_fn,
             personalization=backward_personalization
-        )
+        ))
 
         # Merge scores: Non-linear merge to prevent domination (Issue 2)
         merged_scores = {}
