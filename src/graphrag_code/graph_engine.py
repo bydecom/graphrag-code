@@ -11,6 +11,7 @@ class GraphRAGCodeEngine:
         # Mapping between SQLite ID and Rustworkx Node Index
         self.sqlite_id_to_rx_idx = {}
         self.rx_idx_to_symbol_info = {}
+        self.name_to_rx_idx = {}  # O(1) lookup map
 
     def load_graph(self):
         """
@@ -50,6 +51,16 @@ class GraphRAGCodeEngine:
             # Save mapping
             self.sqlite_id_to_rx_idx[sym_id] = rx_idx
             self.rx_idx_to_symbol_info[rx_idx] = node_data
+            
+            # Issue B: Handle duplicate symbol names (like multiple validate() methods)
+            if name not in self.name_to_rx_idx:
+                self.name_to_rx_idx[name] = rx_idx
+            else:
+                existing = self.name_to_rx_idx[name]
+                if isinstance(existing, list):
+                    existing.append(rx_idx)
+                else:
+                    self.name_to_rx_idx[name] = [existing, rx_idx]
 
         # 2. Load Edges from central SQL VIEW
         # The `resolved_edges` VIEW already resolves cross-file import/extends logic (DRY)
@@ -73,9 +84,11 @@ class GraphRAGCodeEngine:
         # Build reversed graph for Bidirectional PPR
         self.reversed_graph = rx.PyDiGraph()
         for idx in sorted(self.graph.node_indices()):
-            self.reversed_graph.add_node(self.graph[idx])
+            # Issue 3: Add None instead of duplicating node metadata to save ~50% RAM
+            self.reversed_graph.add_node(None) 
         for src, tgt, data in self.graph.weighted_edge_list():
-            self.reversed_graph.add_edge(tgt, src, data)
+            # Only duplicate the weight needed for PageRank, not the whole dict
+            self.reversed_graph.add_edge(tgt, src, {"weight": data.get("weight", 1.0)})
         
         conn.close()
         
@@ -125,7 +138,7 @@ class GraphRAGCodeEngine:
         return list(expanded_seeds)
 
     def get_context_ppr(self, seed_name: str, top_k: int = 5,
-                        backward_weight: float = 0.7):
+                        backward_weight: float = 0.2):
         """
         Runs Bidirectional Personalized PageRank.
         Forward PPR: finds downstream dependencies (A calls B → retrieve B).
@@ -133,14 +146,14 @@ class GraphRAGCodeEngine:
         
         Args:
             backward_weight: Scale factor for upstream scores (0.0-1.0).
-                            Defaults to 0.7 as upstream files carry less direct bug-fix context.
+                             Default lowered to 0.2 to prevent upstream callers from dominating 
+                             downstream context (fixes Issue 2).
         """
-        # Find rx_idx of the Seed Node
-        seed_idx = None
-        for rx_idx, data in self.rx_idx_to_symbol_info.items():
-            if data["name"] == seed_name:
-                seed_idx = rx_idx
-                break
+        # Issue 4 & B: O(1) Symbol Lookup with Duplicate Handling
+        seed_idx = self.name_to_rx_idx.get(seed_name)
+        if isinstance(seed_idx, list):
+            logging.warning(f"[!] Ambiguous symbol '{seed_name}': found {len(seed_idx)} matches. Using first occurrence.")
+            seed_idx = seed_idx[0]
                 
         if seed_idx is None:
             logging.warning(f"[!] Symbol '{seed_name}' not found in the Graph.")
@@ -183,12 +196,24 @@ class GraphRAGCodeEngine:
             personalization=backward_personalization
         )
 
-        # Merge scores: forward + backward * weight
+        # Merge scores: Non-linear merge to prevent domination (Issue 2)
         merged_scores = {}
         for idx in self.graph.node_indices():
-            fwd = forward_scores[idx] if idx in forward_scores else 0.0
-            bwd = backward_scores[idx] if idx in backward_scores else 0.0
-            merged_scores[idx] = fwd + bwd * backward_weight
+            fwd = forward_scores.get(idx, 0.0)
+            bwd = backward_scores.get(idx, 0.0)
+            
+            # Harmonic-like merge: Dampen backward impact if forward is very weak (unless we are looking for blast radius)
+            if backward_weight < 0.5:
+                # For context understanding: rely on fwd, heavily penalize callers that don't give forward info
+                merged_scores[idx] = fwd + (bwd * backward_weight * (fwd + 1e-4))
+            else:
+                # For blast radius (backward_weight >= 0.5): pure linear is acceptable as we care about callers
+                merged_scores[idx] = fwd * (1.0 - backward_weight) + bwd * backward_weight
+
+        # Issue 1: Remove expanded seeds from merged scores so the agent doesn't get what it already knows
+        for n in expanded_seeds:
+            if n in merged_scores:
+                del merged_scores[n]
 
         # Sort nodes by score descending - Complexity: O(|V| log |V|)
         ranked_nodes = sorted(merged_scores.items(), key=lambda item: item[1], reverse=True)
@@ -210,6 +235,8 @@ class GraphRAGCodeEngine:
                     "name": symbol_data["name"],
                     "kind": symbol_data["kind"],
                     "score": round(score, 4),
+                    "fwd_score": round(forward_scores.get(rx_idx, 0.0), 4),
+                    "bwd_score": round(backward_scores.get(rx_idx, 0.0), 4),
                     "file_path": symbol_data["file_path"],
                     "source_code": source_code
                 })
