@@ -1,18 +1,18 @@
 """
 benchmark_suite.py — GraphRAG-Code vs Brute-Force Benchmark
 =========================================================
-Đo lường thực tế: Token cost, latency, tool calls, accuracy
-Chạy: python benchmark_suite.py --db graphrag_code.sqlite --runs 3
+Empirical measurement: Token cost, latency, tool calls, accuracy
+Usage: python benchmark_suite.py --db graphrag_code.sqlite --runs 3
 
-Yêu cầu:
+Requirements:
     pip install litellm mcp tiktoken rich
 
-Cấu trúc output:
+Output structure:
     benchmark_results/
         run_YYYYMMDD_HHMMSS/
             results.json       ← raw data
-            report.md          ← bảng markdown để paste vào README
-            summary.txt        ← tóm tắt terminal
+            report.md          ← markdown table for README
+            summary.txt        ← terminal summary
 """
 
 import asyncio
@@ -31,7 +31,7 @@ import litellm
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-# ── Optional: dùng tiktoken để đếm token chính xác hơn ──────────────────────
+# ── Optional: use tiktoken for accurate token counting ──────────────────────
 try:
     import tiktoken
     _enc = tiktoken.get_encoding("cl100k_base")
@@ -39,10 +39,10 @@ try:
         return len(_enc.encode(text))
 except ImportError:
     def count_tokens(text: str) -> int:
-        # Fallback: xấp xỉ 1 token ~ 4 chars
+        # Fallback: approx 1 token ~ 4 chars
         return len(text) // 4
 
-# ── Optional: rich để hiển thị đẹp ─────────────────────────────────────────
+# ── Optional: rich for beautiful terminal output ─────────────────────────────────────────
 try:
     from rich.console import Console
     from rich.table import Table
@@ -58,51 +58,51 @@ except ImportError:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHẦN 1: ĐỊNH NGHĨA TEST CASES
-# Chỉnh sửa phần này cho phù hợp với codebase của bạn
+# PART 1: DEFINE TEST CASES
+# Modify this section to fit your codebase
 # ══════════════════════════════════════════════════════════════════════════════
 
 TEST_CASES = [
     {
         "id": "TC01",
-        "question": "Hàm nào chịu trách nhiệm kiểm tra lỗi (check validation) trong codebase này? Ai gọi nó và luồng hoạt động thế nào?",
+        "question": "Which function is responsible for validation error checking in this codebase? Who calls it and how does it flow?",
         "seed_node": "check_validation_errors",
         "category": "architecture",
         "expected_keywords": ["minibaycanvas", "update_status_border"], 
     },
     {
         "id": "TC02",
-        "question": "Nếu tôi thay đổi logic trong hàm lấy loại tàu (_get_ship_type), những module nào sẽ bị ảnh hưởng (blast radius)?",
+        "question": "If I change the logic in the ship type retrieval function (_get_ship_type), which modules will be affected (blast radius)?",
         "seed_node": "_get_ship_type",
         "category": "impact_analysis",
         "expected_keywords": ["ship", "bay", "affect", "call", "import", "depend", "module"],
     },
     {
         "id": "TC03",
-        "question": "Class BayMenu được cấu tạo từ những thành phần nào? Phương thức render_grid hoạt động ra sao?",
+        "question": "What components make up the BayMenu class? How does the render_grid method work?",
         "seed_node": "BayMenu",
         "category": "architecture",
         "expected_keywords": ["render_grid", "canvas", "grid"],
     }
 ]
 
-# ── Bạn có thể thêm test cases tùy theo codebase của mình ───────────────────
-CUSTOM_TEST_CASES = []  # Thêm vào đây nếu muốn
+# ── You can add custom test cases here ────────────────────────────────────────
+CUSTOM_TEST_CASES = []  
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHẦN 2: DATA STRUCTURES
+# PART 2: DATA STRUCTURES
 # ══════════════════════════════════════════════════════════════════════════════
 
 @dataclass
 class RunMetrics:
-    """Metrics cho một lần chạy đơn lẻ."""
+    """Metrics for a single run."""
     tokens_input: int = 0
     tokens_output: int = 0
     tool_calls: int = 0
     latency_seconds: float = 0.0
     answer_text: str = ""
-    accuracy_score: float = 0.0     # 0.0 → 1.0 dựa trên keyword matching
+    accuracy_score: float = 0.0     # 0.0 → 1.0 based on keyword matching
     error: Optional[str] = None
     messages_history: list = field(default_factory=list)
 
@@ -112,7 +112,7 @@ class RunMetrics:
 
     @property
     def cost_usd_estimate(self) -> float:
-        # Gemini Flash pricing xấp xỉ (thay đổi theo model bạn dùng)
+        # Approximate Gemini Flash pricing (adjust based on your model)
         input_cost = self.tokens_input * 0.075 / 1_000_000
         output_cost = self.tokens_output * 0.30 / 1_000_000
         return round(input_cost + output_cost, 6)
@@ -120,7 +120,7 @@ class RunMetrics:
 
 @dataclass
 class TestResult:
-    """Kết quả tổng hợp cho một test case (nhiều runs)."""
+    """Aggregated results for a test case (multiple runs)."""
     test_id: str
     question: str
     category: str
@@ -167,26 +167,26 @@ class TestResult:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHẦN 3: AGENT RUNNERS
+# PART 3: AGENT RUNNERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-SYSTEM_PROMPT_CODEGRAPH = """Bạn là AI Software Architect. Hãy phân tích codebase được cung cấp qua GraphRAG-Code tools.
+SYSTEM_PROMPT_CODEGRAPH = """You are an AI Software Architect. Please analyze the codebase provided via GraphRAG-Code tools.
 
-Quy trình BẮT BUỘC:
-1. Gọi `list_symbols` để xem tổng quan codebase.
-2. Gọi `get_pruned_context` với seed_node phù hợp để lấy context chính xác.
-3. Nếu cần biết ai đang gọi một hàm, dùng `get_callers`.
-4. Trả lời ngắn gọn, chính xác dựa trên CODE THẬT từ tools — không đoán mò.
+MANDATORY Workflow:
+1. Call `list_symbols` to get an overview of the codebase.
+2. Call `get_pruned_context` with an appropriate seed_node to get exact context.
+3. If you need to know who calls a function, use `get_callers`.
+4. Answer concisely and accurately based on REAL CODE from the tools — do not guess.
 
-Không được đọc file thủ công. Chỉ dùng tools được cung cấp."""
+Do not attempt to read files manually. Only use the provided tools."""
 
-SYSTEM_PROMPT_BASELINE = """Bạn là AI Software Architect. Phân tích codebase được cung cấp dưới đây.
+SYSTEM_PROMPT_BASELINE = """You are an AI Software Architect. Analyze the codebase provided below.
 
-Hãy trả lời câu hỏi dựa trên code được cung cấp trong context. Trả lời ngắn gọn và chính xác."""
+Please answer the question based on the code provided in the context. Answer concisely and accurately."""
 
 
 def _calc_accuracy(answer: str, expected_keywords: list[str]) -> float:
-    """Tính accuracy đơn giản dựa trên keyword matching (0.0–1.0)."""
+    """Calculate simple accuracy based on keyword matching (0.0–1.0)."""
     if not expected_keywords:
         return 1.0
     answer_lower = answer.lower()
@@ -202,7 +202,7 @@ async def run_graphrag_code_agent(
     model: str,
     api_key: str,
 ) -> RunMetrics:
-    """Chạy agent với GraphRAG-Code MCP tools."""
+    """Run agent with GraphRAG-Code MCP tools."""
     metrics = RunMetrics()
     start = time.perf_counter()
 
@@ -211,7 +211,7 @@ async def run_graphrag_code_agent(
     env["PYTHONUTF8"] = "1"
     env["CODEGRAPH_DB"] = db_path
 
-    # Gọi mcp server dưới dạng module Python (sau khi đã tái cấu trúc vào thư mục src)
+    # Call mcp server as a Python module (after refactoring into src directory)
     server_params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "graphrag_code.mcp_server"],
@@ -241,12 +241,12 @@ async def run_graphrag_code_agent(
                     {"role": "user",   "content": question},
                 ]
 
-                # Nếu có seed_node gợi ý, thêm vào context
+                # If there's a suggested seed_node, add it to the context
                 if seed_node:
-                    messages[1]["content"] += f"\n\n[Gợi ý: bắt đầu từ symbol '{seed_node}']"
+                    messages[1]["content"] += f"\n\n[Hint: start from symbol '{seed_node}']"
 
                 # Agent loop
-                for _ in range(10):   # max 10 vòng tool calling
+                for _ in range(10):   # max 10 tool calling iterations
                     response = await litellm.acompletion(
                         model=model,
                         messages=messages,
@@ -276,7 +276,7 @@ async def run_graphrag_code_agent(
                                 "content":      result_text,
                             })
                     else:
-                        # Agent kết thúc
+                        # Agent finished
                         metrics.answer_text    = msg.content or ""
                         metrics.accuracy_score = _calc_accuracy(
                             metrics.answer_text, expected_keywords
@@ -297,7 +297,7 @@ async def run_baseline_agent(
     model: str,
     api_key: str,
 ) -> RunMetrics:
-    """Chạy agent brute-force: đưa toàn bộ codebase vào context."""
+    """Run brute-force agent: inject entire codebase into context."""
     metrics = RunMetrics()
     start = time.perf_counter()
 
@@ -305,7 +305,7 @@ async def run_baseline_agent(
         {"role": "system", "content": SYSTEM_PROMPT_BASELINE},
         {
             "role": "user",
-            "content": f"CODEBASE:\n\n{codebase_dump}\n\nCÂU HỎI: {question}"
+            "content": f"CODEBASE:\n\n{codebase_dump}\n\nQUESTION: {question}"
         },
     ]
 
@@ -317,7 +317,7 @@ async def run_baseline_agent(
         )
         metrics.tokens_input  = response.usage.prompt_tokens
         metrics.tokens_output = response.usage.completion_tokens
-        metrics.tool_calls    = 0   # Brute-force không dùng tools
+        metrics.tool_calls    = 0   # Brute-force does not use tools
         metrics.answer_text   = response.choices[0].message.content or ""
         metrics.accuracy_score = _calc_accuracy(metrics.answer_text, expected_keywords)
 
@@ -329,13 +329,13 @@ async def run_baseline_agent(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHẦN 4: CODEBASE DUMP (cho baseline arm)
+# PART 4: CODEBASE DUMP (for baseline arm)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def build_codebase_dump(codebase_dir: str, max_files: int = 50) -> str:
     """
-    Đọc tất cả file .py trong thư mục và ghép lại thành một chuỗi lớn.
-    Đây là cách brute-force agents hoạt động (full codebase in context).
+    Read all .py files in the directory and concatenate them into a large string.
+    This is how brute-force agents operate (full codebase in context).
     """
     parts = []
     count = 0
@@ -357,14 +357,14 @@ def build_codebase_dump(codebase_dir: str, max_files: int = 50) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHẦN 5: REPORTING
+# PART 5: REPORTING
 # ══════════════════════════════════════════════════════════════════════════════
 
 def save_results(results: list[TestResult], output_dir: Path):
-    """Lưu kết quả ra JSON và Markdown."""
+    """Save results to JSON and Markdown."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── JSON raw ─────────────────────────────────────────────────────────────
+    # ── Raw JSON ─────────────────────────────────────────────────────────────
     raw = []
     for r in results:
         raw.append({
@@ -442,7 +442,7 @@ def save_results(results: list[TestResult], output_dir: Path):
 
 
 def print_summary_table(results: list[TestResult]):
-    """In bảng tóm tắt ra terminal."""
+    """Print summary table to terminal."""
     if not HAS_RICH:
         print("\n=== BENCHMARK SUMMARY ===")
         for r in results:
@@ -481,13 +481,13 @@ def print_summary_table(results: list[TestResult]):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHẦN 6: MAIN ORCHESTRATOR
+# PART 6: MAIN ORCHESTRATOR
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def run_benchmark(args):
     api_key = args.api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        console.print("[red]❌ Cần set GEMINI_API_KEY hoặc OPENAI_API_KEY[/red]")
+        console.print("[red]❌ Need to set GEMINI_API_KEY or OPENAI_API_KEY[/red]")
         sys.exit(1)
 
     all_cases = TEST_CASES + CUSTOM_TEST_CASES
@@ -502,7 +502,7 @@ async def run_benchmark(args):
     console.print(f"  Tests:    {len(all_cases)}")
     console.rule()
 
-    # Build codebase dump cho baseline arm
+    # Build codebase dump for baseline arm
     codebase_dump = ""
     if args.codebase_dir:
         console.print(f"[dim]Building codebase dump from: {args.codebase_dir}[/dim]")
@@ -510,7 +510,7 @@ async def run_benchmark(args):
         tokens_in_dump = count_tokens(codebase_dump)
         console.print(f"[dim]Dump size: ~{tokens_in_dump:,} tokens ({len(codebase_dump):,} chars)[/dim]")
     else:
-        console.print("[yellow]⚠️  --codebase-dir không được cung cấp. Baseline arm sẽ dùng dump rỗng.[/yellow]")
+        console.print("[yellow]⚠️  --codebase-dir not provided. Baseline arm will use empty dump.[/yellow]")
 
     results: list[TestResult] = []
 
@@ -545,7 +545,7 @@ async def run_benchmark(args):
                     f"acc={metrics.accuracy_score:.2f}"
                 )
 
-            # Cooldown giữa các runs để tránh rate limit
+            # Cooldown between runs to avoid rate limiting
             if run_idx < args.runs - 1:
                 await asyncio.sleep(args.cooldown)
 
@@ -590,22 +590,22 @@ async def run_benchmark(args):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHẦN 7: CLI ENTRY POINT
+# PART 7: CLI ENTRY POINT
 # ══════════════════════════════════════════════════════════════════════════════
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="GraphRAG-Code Benchmark Suite — đo token savings vs brute-force"
+        description="GraphRAG-Code Benchmark Suite — measure token savings vs brute-force"
     )
     parser.add_argument(
         "--db",
         default="graphrag_code.sqlite",
-        help="Đường dẫn tới SQLite database của GraphRAG-Code (default: graphrag_code.sqlite)"
+        help="Path to SQLite database of GraphRAG-Code (default: graphrag_code.sqlite)"
     )
     parser.add_argument(
         "--codebase-dir",
         default=None,
-        help="Thư mục chứa source code để build baseline dump (default: None)"
+        help="Directory containing source code to build baseline dump (default: None)"
     )
     parser.add_argument(
         "--model",
@@ -615,45 +615,45 @@ def parse_args():
     parser.add_argument(
         "--api-key",
         default=None,
-        help="API key (hoặc set env GEMINI_API_KEY / OPENAI_API_KEY)"
+        help="API key (or set env GEMINI_API_KEY / OPENAI_API_KEY)"
     )
     parser.add_argument(
         "--runs",
         type=int,
         default=3,
-        help="Số lần chạy mỗi arm để lấy median (default: 3)"
+        help="Number of runs per arm to get median (default: 3)"
     )
     parser.add_argument(
         "--cooldown",
         type=float,
         default=2.0,
-        help="Giây nghỉ giữa các runs để tránh rate limit (default: 2.0)"
+        help="Seconds to rest between runs to avoid rate limits (default: 2.0)"
     )
     parser.add_argument(
         "--max-files",
         type=int,
         default=50,
-        help="Số file tối đa đưa vào baseline dump (default: 50)"
+        help="Max files to include in baseline dump (default: 50)"
     )
     parser.add_argument(
         "--output-dir",
         default="benchmark_results",
-        help="Thư mục lưu kết quả (default: benchmark_results/)"
+        help="Directory to save results (default: benchmark_results/)"
     )
     parser.add_argument(
         "--test-ids",
         default=None,
-        help="Chỉ chạy một số test IDs, cách nhau bằng dấu phẩy (vd: TC01,TC03)"
+        help="Only run specific test IDs, separated by commas (e.g. TC01,TC03)"
     )
     parser.add_argument(
         "--skip-baseline",
         action="store_true",
-        help="Bỏ qua baseline arm, chỉ đo GraphRAG-Code (dùng khi debug)"
+        help="Skip baseline arm, only benchmark GraphRAG-Code (useful for debugging)"
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Chỉ in ra config, không chạy thật"
+        help="Only print config, do not run"
     )
     return parser.parse_args()
 
@@ -669,7 +669,7 @@ def main():
     if args.dry_run:
         console.print("[bold yellow]DRY RUN — config:[/bold yellow]")
         console.print(vars(args))
-        console.print(f"\nTest cases sẽ chạy: {len(TEST_CASES + CUSTOM_TEST_CASES)}")
+        console.print(f"\nTest cases to run: {len(TEST_CASES + CUSTOM_TEST_CASES)}")
         sys.exit(0)
 
     asyncio.run(run_benchmark(args))
