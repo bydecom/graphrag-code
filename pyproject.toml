@@ -39,7 +39,8 @@ dev = [
 ]
 
 [project.scripts]
-# Lưu ý: Các entry point này sẽ hoạt động sau khi ta đưa code vào cấu trúc src/graphrag_code
+# Note: These entry points work properly now that code is in src/graphrag_code
 graphrag-code-index = "graphrag_code.indexer:main"
 graphrag-code-mcp = "graphrag_code.mcp_server:main"
 graphrag-code-agent = "graphrag_code.cli_agent:main"
+graphrag-code-export = "graphrag_code.export_graph:main"
