@@ -13,8 +13,12 @@ class TestGraphEngine(unittest.TestCase):
     def setUp(self):
         """Construct Mock Graph Data for PageRank mathematical verification"""
         self.db_path = "test_engine.sqlite"
+        # Safely remove old DB if exists
         if os.path.exists(self.db_path):
-            os.remove(self.db_path)
+            try:
+                os.remove(self.db_path)
+            except PermissionError:
+                pass
             
         self.conn = init_db(self.db_path)
         cursor = self.conn.cursor()
@@ -23,13 +27,13 @@ class TestGraphEngine(unittest.TestCase):
         cursor.execute("INSERT INTO files (file_path, checksum) VALUES ('fake_module.py', 'md5hash')")
         file_id = cursor.lastrowid
         
-        # 2. Mock Symbol entries
+        # 2. Mock Symbol entries with short_name to satisfy NOT NULL constraints
         symbols = [
-            (file_id, "Controller", "class", 1, 10),
-            (file_id, "HelperUtils", "class", 12, 20),
-            (file_id, "IBaseInterface", "class", 22, 30)
+            (file_id, "Controller", "Controller", "class", 1, 10),
+            (file_id, "HelperUtils", "HelperUtils", "class", 12, 20),
+            (file_id, "IBaseInterface", "IBaseInterface", "class", 22, 30)
         ]
-        cursor.executemany("INSERT INTO symbols (file_id, name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?)", symbols)
+        cursor.executemany("INSERT INTO symbols (file_id, name, short_name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)", symbols)
         
         # Resolve mappings
         cursor.execute("SELECT id, name FROM symbols")
@@ -45,9 +49,14 @@ class TestGraphEngine(unittest.TestCase):
 
     def tearDown(self):
         """Clean up SQLite artifacts"""
-        self.conn.close()
+        if hasattr(self, 'conn') and self.conn:
+            self.conn.close()
+            self.conn = None
         if os.path.exists(self.db_path):
-            os.remove(self.db_path)
+            try:
+                os.remove(self.db_path)
+            except PermissionError:
+                pass
 
     def test_load_graph_success(self):
         """Verify the Graph Engine successfully constructs rustworkx representation from DB"""
@@ -72,9 +81,11 @@ class TestGraphEngine(unittest.TestCase):
         context = engine.get_context_ppr("HelperUtils", top_k=3)
         names = [item["name"] for item in context]
         
-        self.assertIn("HelperUtils", names)       # Seed itself
-        self.assertIn("Controller", names)        # Upstream Caller
-        self.assertIn("IBaseInterface", names)    # Downstream Dependency
+        self.assertIn("Controller", names)        # Upstream Caller should be returned
+        # Seed itself ("HelperUtils") and extended interface ("IBaseInterface") are in expanded_seeds,
+        # so they are correctly excluded from the returned context to avoid redundancy (Issue 1)
+        self.assertNotIn("HelperUtils", names)
+        self.assertNotIn("IBaseInterface", names)
 
     def test_interface_expansion(self):
         """Verify structural Interface expansion rules"""

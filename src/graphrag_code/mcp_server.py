@@ -43,8 +43,10 @@ def get_pruned_context(seed_node: str, top_k: int = 5, max_tokens: int = 2000) -
         
     results = engine.get_context_ppr(seed_node, top_k)
     
+    if results is None:
+        return f"[!] Symbol '{seed_node}' not found in the Codebase Graph."
     if not results:
-        return f"[!] Structure '{seed_node}' not found in the Codebase Graph."
+        return f"[i] Symbol '{seed_node}' exists, but has no detected dependencies or callers."
     
     # Format output for LLM context injection with token budget controls
     context_str = f"### Context Report (Graph PPR) for: `{seed_node}`\n"
@@ -80,11 +82,7 @@ def get_callers(function_name: str) -> str:
     if engine is None:
         return "[!] System Error: Standby mode active. Please run `indexer.py` to generate the DB first."
         
-    seed_idx = None
-    for rx_idx, data in engine.rx_idx_to_symbol_info.items():
-        if data["name"] == function_name:
-            seed_idx = rx_idx
-            break
+    seed_idx = engine.get_node_index(function_name)
             
     if seed_idx is None:
         return f"[!] Symbol '{function_name}' not found in the Graph."
@@ -132,8 +130,10 @@ def get_impact(symbol_name: str, top_k: int = 10) -> str:
     results = engine.get_context_ppr(symbol_name, top_k=top_k, backward_weight=0.9)
     # backward_weight=0.9 → force PPR to lean towards upstream callers (blast radius direction)
 
-    if not results:
+    if results is None:
         return f"[!] Symbol '{symbol_name}' not found in the Graph."
+    if not results:
+        return f"[i] Symbol '{symbol_name}' exists, but has no detected dependencies or callers."
 
     # Find the seed node to exclude from the results (no need to report itself)
     seed_filtered = [r for r in results if r["name"] != symbol_name]
@@ -203,11 +203,7 @@ def get_context(symbol_name: str, top_k: int = 5, max_tokens: int = 1500) -> str
         return "[!] System Error: Standby mode. Please run the indexer first."
 
     # ── Section 1: Upstream Callers (who is calling this symbol?) ────────────────
-    seed_idx = None
-    for rx_idx, data in engine.rx_idx_to_symbol_info.items():
-        if data["name"] == symbol_name:
-            seed_idx = rx_idx
-            break
+    seed_idx = engine.get_node_index(symbol_name)
 
     callers_section = ""
     if seed_idx is not None:
