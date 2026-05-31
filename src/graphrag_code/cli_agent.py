@@ -47,11 +47,15 @@ async def run_cli_agent():
             messages = [
                 {
                     "role": "system", 
-                    "content": "You are a world-class AI Software Architect working on a large codebase.\n"
-                               "Mandatory procedure before analyzing/coding:\n"
-                               "1. ALWAYS use 'list_symbols' for an overview of the file/module.\n"
-                               "2. ALWAYS use 'get_callers' to evaluate the Blast Radius.\n"
-                               "3. ALWAYS use 'get_pruned_context' to read the most precise source code blocks."
+                    "content": (
+                        "You are a world-class AI Software Architect working on a large codebase.\n"
+                        "Mandatory procedure before analyzing or modifying code:\n"
+                        "1. ALWAYS call 'list_symbols' first for a structural overview.\n"
+                        "2. For deep analysis of ONE symbol: use 'get_context' (360° view: callers + source + deps in one call).\n"
+                        "3. Before editing anything: call 'get_impact' to see blast radius with confidence scores.\n"
+                        "4. For broad context across multiple related symbols: use 'get_pruned_context'.\n"
+                        "Never edit code without first checking get_impact. Never guess dependencies."
+                    )
                 }
             ]
             

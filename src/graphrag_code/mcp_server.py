@@ -254,12 +254,13 @@ def get_context(symbol_name: str, top_k: int = 5, max_tokens: int = 1500) -> str
         if deps:
             total_tokens = 0
             deps_section = f"#### ⬇️ Downstream Dependencies ({len(deps)} found)\n"
-            for item in deps:
+            for i, item in enumerate(deps):
                 estimated = int(len(item["source_code"].split()) * 1.3)
                 if total_tokens + estimated > max_tokens:
+                    remaining = len(deps) - i
                     deps_section += (
                         f"\n> ⚠️ Token budget reached ({max_tokens} tokens). "
-                        f"{len(deps) - deps.index(item)} more dependencies omitted.\n"
+                        f"{remaining} more dependencies omitted.\n"
                     )
                     break
                 total_tokens += estimated
