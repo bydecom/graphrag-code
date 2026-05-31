@@ -34,6 +34,9 @@ def get_pruned_context(seed_node: str, top_k: int = 5, max_tokens: int = 2000) -
         seed_node: Name of the function/class being modified or analyzed (e.g., 'process_checkout')
         top_k: Maximum number of related nodes to return.
         max_tokens: Maximum token budget to prevent LLM overload (default 2000).
+        
+    Note: Uses backward_weight=0.2 (default) which prioritizes downstream dependencies 
+    over upstream callers. Use get_impact() for blast radius analysis.
     """
     if engine is None:
         return "[!] System Error: Standby mode active. Please run `indexer.py` to generate the DB first."
@@ -237,44 +240,46 @@ def get_context(symbol_name: str, top_k: int = 5, max_tokens: int = 1500) -> str
     source_section = ""
     deps_section = ""
 
-    if not ppr_results:
-        source_section = f"#### 📄 Source Code\n- *(Symbol `{symbol_name}` not found)*\n"
-    else:
-        # The first symbol in PPR is usually the seed node itself (highest score)
-        seed_result = next((r for r in ppr_results if r["name"] == symbol_name), ppr_results[0])
-
-        source_section = f"#### 📄 Source Code — `{seed_result['name']}`\n"
-        source_section += f"- **File:** `{seed_result['file_path']}`\n"
+    if seed_idx is not None:
+        seed_data = engine.rx_idx_to_symbol_info[seed_idx]
+        source_code = engine._extract_source_code(
+            seed_data["file_path"],
+            seed_data["start_line"],
+            seed_data["end_line"]
+        )
+        source_section = f"#### 📄 Source Code — `{symbol_name}`\n"
+        source_section += f"- **File:** `{seed_data['file_path']}`\n"
         source_section += "```python\n"
-        source_section += seed_result["source_code"] + "\n"
+        source_section += source_code + "\n"
         source_section += "```\n"
+    else:
+        source_section = f"#### 📄 Source Code\n- *(Symbol `{symbol_name}` not found)*\n"
 
-        # The remainder are downstream dependencies
-        deps = [r for r in ppr_results if r["name"] != symbol_name]
-        if deps:
-            total_tokens = 0
-            deps_section = f"#### ⬇️ Downstream Dependencies ({len(deps)} found)\n"
-            for i, item in enumerate(deps):
-                estimated = int(len(item["source_code"].split()) * 1.3)
-                if total_tokens + estimated > max_tokens:
-                    remaining = len(deps) - i
-                    deps_section += (
-                        f"\n> ⚠️ Token budget reached ({max_tokens} tokens). "
-                        f"{remaining} more dependencies omitted.\n"
-                    )
-                    break
-                total_tokens += estimated
-                file_short = item["file_path"].split("/")[-1].split("\\")[-1]
-                deps_section += f"\n**`{item['name']}`** [{item['kind'].upper()}] "
-                deps_section += f"— `{file_short}` (PPR: {item['score']})\n"
-                deps_section += "```python\n"
-                deps_section += item["source_code"] + "\n"
-                deps_section += "```\n"
-        else:
-            deps_section = (
-                "#### ⬇️ Downstream Dependencies\n"
-                "- *(No significant downstream dependencies detected)*\n"
-            )
+    deps = ppr_results
+    if deps:
+        total_tokens = 0
+        deps_section = f"#### ⬇️ Downstream Dependencies ({len(deps)} found)\n"
+        for i, item in enumerate(deps):
+            estimated = int(len(item["source_code"].split()) * 1.3)
+            if total_tokens + estimated > max_tokens:
+                remaining = len(deps) - i
+                deps_section += (
+                    f"\n> ⚠️ Token budget reached ({max_tokens} tokens). "
+                    f"{remaining} more dependencies omitted.\n"
+                )
+                break
+            total_tokens += estimated
+            file_short = item["file_path"].split("/")[-1].split("\\")[-1]
+            deps_section += f"\n**`{item['name']}`** [{item['kind'].upper()}] "
+            deps_section += f"— `{file_short}` (PPR: {item['score']})\n"
+            deps_section += "```python\n"
+            deps_section += item["source_code"] + "\n"
+            deps_section += "```\n"
+    else:
+        deps_section = (
+            "#### ⬇️ Downstream Dependencies\n"
+            "- *(No significant downstream dependencies detected)*\n"
+        )
 
     # ── Assemble final report ─────────────────────────────────────────────────
     report = f"### 360° Context Report for `{symbol_name}`\n\n"
