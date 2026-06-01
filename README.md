@@ -1,12 +1,12 @@
 # GraphRAG-Code 🚀
-**Python-native Code Knowledge Graph using Bidirectional PPR**
+**Python-native Code Knowledge Graph using bidirectional Personalized PageRank**
 
-*An efficient approach to retrieve both upstream callers and downstream dependencies within a single query, extracting exact source code blocks rather than just metadata.*
+*A directed-graph PPR engine that ranks structurally related code and extracts exact source blocks (not just metadata). A single tunable weight selects between two query modes: downstream dependency context and upstream blast-radius.*
 
 ## Why GraphRAG-Code? (The "Why")
 
 In 2026, dumping entire raw files into LLM Agents is highly inefficient, leading to high token costs and increased hallucination rates.  
-GraphRAG-Code solves this by combining **Abstract Syntax Tree (AST)** parsing with a **Bidirectional Personalized PageRank (B-PPR)** algorithm running on an optimized, in-memory graph.
+GraphRAG-Code solves this by combining **Abstract Syntax Tree (AST)** parsing with **Personalized PageRank run in both edge directions** (forward on the graph, backward on a reversed graph) on an optimized, in-memory graph. The two passes are merged with a tunable `backward_weight`.
 
 ```mermaid
 graph TD
@@ -16,17 +16,17 @@ graph TD
     MCP -->|"stdio Protocol"| Client[Cursor Agent]
 ```
 
-## 📊 Benchmark (Small test codebase, 3 test cases)
+## 📊 Benchmark (Small test codebase, 3 test cases — early/indicative only)
 
-| Query Type        | Token Savings | Accuracy vs Baseline |
-|-------------------|---------------|----------------------|
-| Architecture Q&A  | ~89%          | Equal or better      |
-| Blast Radius      | ~97%          | Needs improvement*   |
+| Test Case               | Token Savings              | Latency           | Accuracy vs Full-file Baseline |
+|-------------------------|----------------------------|-------------------|--------------------------------|
+| Architecture Q&A (TC01) | ~89%                       | faster            | Equal or better                |
+| Blast Radius (TC02)     | 97.3% (50,055 → 1,334 tok) | ↓54.6% (6.69→3.04s) | 0.43 vs 0.57 — needs tuning\* |
 
-*\*PPR seed resolution is currently being tuned for internal methods (private functions beginning with `_`). While overhead latency may increase by ~20% on very small codebases, B-PPR shines on large-scale codebases.*
+*\*These are early numbers on a single small codebase (3 test cases) and are **not** a rigorous evaluation. On Blast Radius, accuracy currently drops because aggressive pruning can cut loosely-coupled indirect dependencies; PPR seed resolution for private methods (beginning with `_`) is still being tuned. The full evaluation plan (≥10 repos, 3 baselines, structural metrics) lives in [`docs/RESEARCH.md`](docs/RESEARCH.md), which is the single source of truth for all numbers.*
 
 ### 🔥 Core Differentiators:
-- **Bidirectional PPR Merge:** An academic extension of the Repo Map concept. It merges Forward PPR (downstream dependencies) and Backward PPR (on the Reversed Graph) with a `backward_weight=0.7` to evaluate both blast radius and implementation context in a single query.
+- **Bidirectional PPR Merge (two query modes):** An engineering extension of the Repo Map concept. It runs Forward PPR (downstream dependencies) and Backward PPR (on the reversed graph) as two independent passes, then merges them with a tunable `backward_weight`. The default `0.2` leans toward downstream implementation context, while `get_impact` raises it to `0.9` to surface upstream callers (blast radius). It is therefore **two weight-selected modes**, not one symmetric "see everything" query.
 - **Source Code Block Extraction:** Injects exact code blocks (snippets) into the LLM context using AST coordinates rather than just spitting out symbol metadata.
 - **Interface Expansion (P0-2):** Traversing interface boundaries automatically via inheritance/dependency mapping (e.g., tracking consumers of implemented classes).
 - **Python-Native:** Highly optimized for the Python ecosystem (FastAPI, Django, Data Science).

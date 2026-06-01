@@ -1,8 +1,13 @@
 import os
+import sys
 import sqlite3
 import numpy as np
 import logging
-from src.graphrag_code.graph_engine import GraphRAGCodeEngine
+
+# Make `graphrag_code` importable whether or not the package is pip-installed,
+# so this script runs from the repo root regardless of the active environment.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "src"))
+from graphrag_code.graph_engine import GraphRAGCodeEngine
 
 # Setup basic logging for runner
 logging.getLogger().setLevel(logging.WARNING) # Suppress info logs from engine to keep output clean
@@ -38,8 +43,16 @@ def run_ablation(db_path: str, seed_name: str, top_k: int = 5, output_csv="ablat
         # Execute the engine with varying backward_weight
         context = engine.get_context_ppr(seed_name, top_k=top_k, backward_weight=weight)
         
-        if not context:
-            print(f"{weight:<12.1f} | (No dependencies found)")
+        if context is None:
+            # Seed node không tồn tại trong graph — abort toàn bộ ablation
+            print(f"\n❌ ERROR: Seed node '{seed_name}' not found in graph.")
+            print("   Run: sqlite3 <db> \"SELECT name FROM symbols LIMIT 20;\" to find valid names.")
+            return
+
+        if len(context) == 0:
+            # Node tồn tại nhưng bị isolated — ghi vào CSV và tiếp tục
+            print(f"{weight:<12.1f} | (Node exists but isolated — no deps or callers detected)")
+            csv_lines.append(f"{weight},0,ISOLATED,,0,0,0")
             continue
             
         # Collect top 3 names for console output

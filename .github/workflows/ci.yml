@@ -1,4 +1,4 @@
-name: CodeGraph CI
+name: GraphRAG-Code CI
 
 on:
   push:

@@ -4,6 +4,18 @@ import os
 import logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Backward-weight presets — single source of truth for the merge magic numbers.
+# These tune how strongly the backward (upstream/caller) PPR pass influences the
+# final ranking. Tools across the codebase MUST reference these constants instead
+# of hardcoding values, so the behaviour stays consistent and reviewable.
+# ─────────────────────────────────────────────────────────────────────────────
+DEFAULT_BACKWARD_WEIGHT = 0.2   # structural/dependency context (non-linear merge)
+CONTEXT_BACKWARD_WEIGHT = 0.3   # 360° context view, still leans downstream
+IMPACT_BACKWARD_WEIGHT = 0.9    # blast-radius / upstream callers (linear merge)
+MERGE_MODE_THRESHOLD = 0.5      # >= switches from non-linear damping to linear merge
+
+
 class GraphRAGCodeEngine:
     def __init__(self, db_path="graphrag_code.sqlite"):
         self.db_path = db_path
@@ -95,12 +107,35 @@ class GraphRAGCodeEngine:
         logging.info(f"[-] Successfully loaded Graph: {self.graph.num_nodes()} Nodes, {self.graph.num_edges()} Edges (+ reversed graph).")
 
     def get_node_index(self, symbol_name: str):
-        """O(1) resolve symbol name to rustworkx index with duplicate handling."""
-        idx = self.name_to_rx_idx.get(symbol_name)
-        if isinstance(idx, list):
-            logging.warning(f"[!] Ambiguous symbol '{symbol_name}': found {len(idx)} matches. Using first occurrence.")
-            return idx[0]
-        return idx
+        """Resolve a symbol name to its rustworkx index.
+
+        Exact match is O(1) via the `name_to_rx_idx` dict. If that misses, we fall
+        back to an O(N) suffix scan to resolve short names against stored FQNs
+        (e.g. 'GraphEngine' -> '<module: engine.py>::GraphEngine').
+        """
+        # 1. Exact match
+        if symbol_name in self.name_to_rx_idx:
+            idx = self.name_to_rx_idx[symbol_name]
+            if isinstance(idx, list):
+                logging.warning(f"[!] Ambiguous symbol '{symbol_name}': found {len(idx)} matches. Using first occurrence.")
+                return idx[0]
+            return idx
+            
+        # 2. Suffix match (e.g. searching 'GraphEngine' matches '<module: engine.py>::GraphEngine')
+        matches = []
+        for name, idx in self.name_to_rx_idx.items():
+            if name.endswith(f"::{symbol_name}") or name.endswith(f".{symbol_name}"):
+                if isinstance(idx, list):
+                    matches.extend(idx)
+                else:
+                    matches.append(idx)
+                    
+        if matches:
+            if len(matches) > 1:
+                logging.warning(f"[!] Ambiguous symbol '{symbol_name}': found {len(matches)} matches (Suffix). Using first occurrence.")
+            return matches[0]
+            
+        return None
 
     def _extract_source_code(self, file_path, start_line, end_line):
         """Internal helper: Read the file and slice the exact code block (O(1) I/O)"""
@@ -146,16 +181,27 @@ class GraphRAGCodeEngine:
         return list(expanded_seeds)
 
     def get_context_ppr(self, seed_name: str, top_k: int = 5,
-                        backward_weight: float = 0.2):
+                        backward_weight: float = DEFAULT_BACKWARD_WEIGHT):
         """
-        Runs Bidirectional Personalized PageRank.
-        Forward PPR: finds downstream dependencies (A calls B → retrieve B).
-        Backward PPR: finds upstream consumers/controllers (C calls A → retrieve C).
-        
+        Runs Personalized PageRank in BOTH edge directions and merges the results.
+
+        This is NOT the Lofgren et al. (2016) bidirectional PPR *estimator*. Here we
+        run two independent, full PPR passes and combine their score vectors:
+          - Forward PPR (on the original graph): downstream dependencies
+            (A calls B → retrieve B).
+          - Backward PPR (on the reversed graph): upstream consumers/callers
+            (C calls A → retrieve C / blast radius).
+
+        The two passes are then merged with `backward_weight`. Because a pure caller
+        has ~zero forward score, low weights (< MERGE_MODE_THRESHOLD) effectively
+        favour downstream context, while high weights surface upstream callers. In
+        practice this means the engine serves two distinct query modes depending on
+        the weight, rather than one symmetric "see everything" query.
+
         Args:
             backward_weight: Scale factor for upstream scores (0.0-1.0).
-                             Default lowered to 0.2 to prevent upstream callers from dominating 
-                             downstream context (fixes Issue 2).
+                             Default is DEFAULT_BACKWARD_WEIGHT (downstream-leaning).
+                             Use IMPACT_BACKWARD_WEIGHT for blast-radius queries.
         """
         seed_idx = self.get_node_index(seed_name)
                 
@@ -207,7 +253,7 @@ class GraphRAGCodeEngine:
             bwd = backward_scores.get(idx, 0.0)
             
             # Harmonic-like merge: Dampen backward impact if forward is very weak (unless we are looking for blast radius)
-            if backward_weight < 0.5:
+            if backward_weight < MERGE_MODE_THRESHOLD:
                 # For context understanding: rely on fwd, heavily penalize callers that don't give forward info
                 merged_scores[idx] = fwd + (bwd * backward_weight * (fwd + 1e-4))
             else:
@@ -225,7 +271,11 @@ class GraphRAGCodeEngine:
         # Retrieve top_k results
         pruned_context = []
         for rx_idx, score in ranked_nodes[:top_k]:
-            if score > 0:
+            # Filter on the rounded score we actually report: a value that rounds to
+            # 0.0000 is noise (e.g. a pure caller under the non-linear damping at low
+            # backward_weight) and would only clutter the agent's context.
+            rounded_score = round(score, 4)
+            if rounded_score > 0:
                 symbol_data = self.rx_idx_to_symbol_info[rx_idx]
                 
                 # Extract precise code snippet
@@ -238,7 +288,7 @@ class GraphRAGCodeEngine:
                 pruned_context.append({
                     "name": symbol_data["name"],
                     "kind": symbol_data["kind"],
-                    "score": round(score, 4),
+                    "score": rounded_score,
                     "fwd_score": round(forward_scores.get(rx_idx, 0.0), 4),
                     "bwd_score": round(backward_scores.get(rx_idx, 0.0), 4),
                     "file_path": symbol_data["file_path"],

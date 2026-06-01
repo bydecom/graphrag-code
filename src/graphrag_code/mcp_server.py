@@ -2,7 +2,11 @@ import os
 import logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 from mcp.server.fastmcp import FastMCP
-from graphrag_code.graph_engine import GraphRAGCodeEngine
+from graphrag_code.graph_engine import (
+    GraphRAGCodeEngine,
+    CONTEXT_BACKWARD_WEIGHT,
+    IMPACT_BACKWARD_WEIGHT,
+)
 
 import importlib.metadata
 try:
@@ -14,7 +18,8 @@ except importlib.metadata.PackageNotFoundError:
 mcp = FastMCP(f"GraphRAG-Code_v{__version__}")
 
 # Warm up in-memory graph cache in O(|V| + |E|) RAM load
-db_file = os.environ.get("CODEGRAPH_DB", "graphrag_code.sqlite")
+# Primary env var is GRAPHRAG_CODE_DB; CODEGRAPH_DB is kept as a legacy fallback.
+db_file = os.environ.get("GRAPHRAG_CODE_DB") or os.environ.get("CODEGRAPH_DB", "graphrag_code.sqlite")
 try:
     engine = GraphRAGCodeEngine(db_file)
     engine.load_graph()
@@ -127,8 +132,8 @@ def get_impact(symbol_name: str, top_k: int = 10) -> str:
     if engine is None:
         return "[!] System Error: Standby mode. Please run the indexer first."
 
-    results = engine.get_context_ppr(symbol_name, top_k=top_k, backward_weight=0.9)
-    # backward_weight=0.9 → force PPR to lean towards upstream callers (blast radius direction)
+    results = engine.get_context_ppr(symbol_name, top_k=top_k, backward_weight=IMPACT_BACKWARD_WEIGHT)
+    # IMPACT_BACKWARD_WEIGHT (0.9) → force PPR to lean towards upstream callers (blast radius direction)
 
     if results is None:
         return f"[!] Symbol '{symbol_name}' not found in the Graph."
@@ -229,8 +234,8 @@ def get_context(symbol_name: str, top_k: int = 5, max_tokens: int = 1500) -> str
 
     # ── Section 2: Source Code + Downstream Dependencies (PPR forward) ───────
     ppr_results = engine.get_context_ppr(
-        symbol_name, top_k=top_k, backward_weight=0.3
-        # backward_weight=0.3 → lean towards forward/downstream to get dependencies
+        symbol_name, top_k=top_k, backward_weight=CONTEXT_BACKWARD_WEIGHT
+        # CONTEXT_BACKWARD_WEIGHT (0.3) → lean towards forward/downstream to get dependencies
     )
 
     source_section = ""

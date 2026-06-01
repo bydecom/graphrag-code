@@ -209,7 +209,7 @@ async def run_graphrag_code_agent(
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
-    env["CODEGRAPH_DB"] = db_path
+    env["GRAPHRAG_CODE_DB"] = db_path
 
     # Call mcp server as a Python module (after refactoring into src directory)
     server_params = StdioServerParameters(

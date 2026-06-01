@@ -60,8 +60,12 @@ def init_db(db_path="graphrag_code.sqlite"):
     CREATE VIEW IF NOT EXISTS resolved_edges AS
         SELECT e.source_id, s.id AS target_id, e.edge_type
         FROM edges e
-        INNER JOIN symbols s ON e.target_name = s.short_name
+        INNER JOIN symbols s ON (
+            e.target_name = s.short_name 
+            OR (s.kind = 'module' AND s.short_name = '<module: ' || e.target_name || '.py>')
+        )
         INNER JOIN symbols src ON e.source_id = src.id
+        INNER JOIN files target_file ON s.file_id = target_file.id
         WHERE s.file_id = src.file_id
            OR e.edge_type IN ('import', 'extends')
            OR EXISTS (
@@ -69,7 +73,10 @@ def init_db(db_path="graphrag_code.sqlite"):
                INNER JOIN symbols s_mod ON e_imp.source_id = s_mod.id
                WHERE s_mod.file_id = src.file_id
                  AND e_imp.edge_type = 'import'
-                 AND e_imp.target_name = e.target_name
+                 AND (
+                     e_imp.target_name = e.target_name
+                     OR target_file.file_path LIKE '%' || REPLACE(e_imp.target_name, '.', '/') || '%'
+                 )
            )
     """)
     conn.commit()
@@ -94,7 +101,7 @@ query = Query(PY_LANGUAGE, QUERY_SCM)
 def compute_checksum(source_code: bytes) -> str:
     return hashlib.md5(source_code).hexdigest()
 
-def get_fqn(node, source_code: bytes) -> str:
+def get_fqn(node, source_code: bytes, module_name: str = "") -> str:
     """Traverse up the AST to build Fully Qualified Name (e.g., ClassName.method_name)."""
     parts = []
     curr = node.parent
@@ -105,7 +112,8 @@ def get_fqn(node, source_code: bytes) -> str:
                     parts.append(source_code[child.start_byte:child.end_byte].decode('utf8'))
                     break
         curr = curr.parent
-    return ".".join(reversed(parts)) if parts else source_code[node.start_byte:node.end_byte].decode('utf8')
+    fqn = ".".join(reversed(parts)) if parts else source_code[node.start_byte:node.end_byte].decode('utf8')
+    return f"{module_name}::{fqn}" if module_name else fqn
 
 def find_enclosing_symbol(node, source_code: bytes, module_name: str) -> str:
     """
@@ -116,7 +124,7 @@ def find_enclosing_symbol(node, source_code: bytes, module_name: str) -> str:
         if curr.type in ('function_definition', 'class_definition'):
             for child in curr.children:
                 if child.type == 'identifier':
-                    return get_fqn(child, source_code)
+                    return get_fqn(child, source_code, module_name)
         curr = curr.parent
     return module_name
 
@@ -180,7 +188,7 @@ def parse_python_file(file_path, conn):
     for node, capture_name in capture_items:
         if capture_name in ('symbol.function', 'symbol.class'):
             short_name = source_code[node.start_byte:node.end_byte].decode('utf8')
-            name = get_fqn(node, source_code)
+            name = get_fqn(node, source_code, module_name)
             kind = capture_name.split('.')[1]
             
             # Use block node (parent) instead of the bare identifier node to capture full coordinates

@@ -35,11 +35,14 @@ gantt
     1.  **Multi-Language AST Support:** Add tree-sitter static parsing configurations for TypeScript/JavaScript and Java.
     2.  **Real-time Active Tab Seeds:** Utilize the MCP protocol to automatically fetch active open files/tabs from modern IDEs (like Cursor) and use them as dynamic seed nodes to boost PPR scores on-the-fly without manual user input.
     3.  **LSIF-Assisted Semantic Resolution:** Bridge AST's semantic blind spots at interface boundaries (especially in OOP languages like Java/TypeScript) by integrating lightweight Language Server Index Format (LSIF) dumping for robust type-resolution, merging it with AST's speed.
-    4.  **Community Evaluation:** Benchmark GraphRAG-Code metrics on $\ge$ 5 real-world open-source repositories.
+    4.  **Enterprise Evaluation Suite:** Build an academic-grade benchmark framework to statistically validate GraphRAG-Code.
+        *   **Dataset Expansion:** Benchmark against 5-10 real-world open-source Python repositories grouped by size: Small (<50 files like `requests`), Medium (50-200 files like `fastapi`), and Large (>200 files like `celery`).
+        *   **Test Cases Registry:** Design 30-50 curated test cases across 3 Agentic tasks: (1) Structural Tracing, (2) Blast Radius Analysis, and (3) Semantic Implementation.
+        *   **Specialized Metrics:** Move beyond generic Accuracy to use Graph-specific metrics: **DRQ** (Dependency Resolution Quality / Recall), **CCR** (Context Compression Ratio), and **AHR** (API Hallucination Rate).
 
 ### Phase 3: Academic Ablation & Research Positioning (v0.3.0) — *Est: Q3 2026*
 *   **Target Deliverables:**
-    1.  **Intent-based Dynamic Weighting & Ablation:** Transition from a static `backward_weight=0.7` to dynamic NLP-driven weighting. Prompts containing "blast radius/affect" will spike backward weights to 0.9, while "how it works/flow" will favor forward downstream traversal. This will be rigorously evaluated via an ablation study.
+    1.  **Intent-based Dynamic Weighting & Ablation:** Transition from a static `backward_weight=0.2` to dynamic NLP-driven weighting. Prompts containing "blast radius/affect" will spike backward weights to 0.9, while "how it works/flow" will favor forward downstream traversal. This will be rigorously evaluated via an ablation study.
     2.  **Systematic Error Log:** Candidly document edge cases (e.g., dynamic imports, decorators) where structural indexing fails.
     3.  **Academic Preprint Draft:** Complete a 6–8 page research manuscript highlighting local-first ast-derived graph advantages over LLM-generated indexing.
 

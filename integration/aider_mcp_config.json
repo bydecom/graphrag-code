@@ -5,7 +5,7 @@
       "env": {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
-        "CODEGRAPH_DB": "graphrag_code.sqlite"
+        "GRAPHRAG_CODE_DB": "graphrag_code.sqlite"
       }
     }
   }

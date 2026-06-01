@@ -15,7 +15,7 @@
 | 4 | *Reliable Graph-RAG for Codebases: AST-Derived Graphs vs LLM-Extracted Knowledge Graphs* | Chinthareddy, arXiv:2601.08773 | Jan 2026 | ⭐⭐⭐⭐⭐ |
 | 5 | *Practical Code RAG at Scale: Task-Aware Retrieval Design Choices under Compute Budgets* | Galimzyanov et al., JetBrains/NeurIPS 2025 | Oct 2025 | ⭐⭐⭐⭐⭐ |
 | 6 | *How Aider's repomap uses PageRank to rank your codebase* | Paul Gauthier (Aider) | 2024 | ⭐⭐⭐⭐⭐ |
-| 7 | *Personalized PageRank Estimation and Search: A Bidirectional Approach* | Lofgren et al., Stanford Univ. (WSDM) | 2016 | 🌟 CORE |
+| 7 | *Personalized PageRank Estimation and Search: A Bidirectional Approach* | Lofgren et al., Stanford Univ. (WSDM) | 2016 | 💡 CONCEPTUAL INSPIRATION |
 
 ---
 
@@ -23,18 +23,21 @@
 
 ---
 
-### 2.0. Mathematical Foundation: Bidirectional PPR (Lofgren et al., Stanford 2016) 🌟 CORE ALGORITHM
+### 2.0. Conceptual Inspiration: Bidirectional PPR (Lofgren et al., Stanford 2016) 💡
 
-**Summary:** This seminal paper from Stanford University provides the rigorous mathematical proofs and algorithms for efficiently estimating Personalized PageRank (PPR) using a Bidirectional approach on massive graphs (e.g., Twitter).
+> [!IMPORTANT]
+> **Honest attribution.** Lofgren et al.'s "Bidirectional PPR" is an *estimation algorithm*: it combines a forward push with a reverse random walk to **quickly approximate a single PPR value between two nodes** with provable error bounds, primarily to scale "Name Search" on massive social graphs (e.g., Twitter).
+>
+> **GraphRAG-Code does NOT implement that algorithm.** What we implement is different and simpler: we run **two independent, full Personalized PageRank passes** — one on the original graph and one on the reversed graph — and then **merge the two score vectors with a tunable weight**. We borrow only the *concept* of reasoning along both edge directions, not Lofgren's estimator or its theoretical guarantees.
 
-**Why it matters for GraphRAG-Code:**
-While Lofgren et al. applied Bidirectional PPR to scale "Name Search" in social graphs by merging forward random walks with backward residual pushes, **GraphRAG-Code pioneers the application of this exact mathematical model to AST semantic analysis**. 
+**Summary:** Lofgren et al. provide rigorous proofs for efficiently *estimating* PPR using a bidirectional forward-push + reverse-walk technique on massive graphs.
 
-By mapping codebase logic to a directed graph, we utilize the bidirectional nature of the algorithm not just for scaling speed, but for deep semantic architectural reasoning:
-*   **Forward PPR:** Traces downstream dependencies ("What external functions does this logic rely on?").
-*   **Backward PPR (Reversed Graph):** Traces upstream consumers to calculate "Blast Radius" ("Who calls this function, and what breaks if I change it?").
+**Why it inspires GraphRAG-Code:**
+The paper popularized the idea that valuable signal exists in *both* traversal directions of a directed graph. We map that intuition onto codebase logic, running PPR in each direction for a different purpose:
+*   **Forward PPR (original graph):** Traces downstream dependencies ("What external functions does this logic rely on?").
+*   **Backward PPR (reversed graph):** Traces upstream consumers to estimate "Blast Radius" ("Who calls this function, and what breaks if I change it?").
 
-GraphRAG-Code stands on the shoulders of this peer-reviewed mathematical foundation to guarantee robust performance and analytical correctness when extracting context for AI Agents.
+So we cite Lofgren et al. as conceptual inspiration for bidirectional reasoning — **not** as the mathematical foundation of our merge, which is a straightforward weighted combination of two standard PPR runs.
 
 ---
 

@@ -18,7 +18,7 @@ async def run_cli_agent():
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
-    env["CODEGRAPH_DB"] = "graphrag_code.sqlite"
+    env["GRAPHRAG_CODE_DB"] = os.environ.get("GRAPHRAG_CODE_DB") or os.environ.get("CODEGRAPH_DB", "graphrag_code.sqlite")
 
     server_params = StdioServerParameters(
         command=sys.executable,

@@ -23,11 +23,11 @@ Add the following JSON block to your Claude configuration file (`claude_desktop_
       "env": {
         "PYTHONIOENCODING": "utf-8",
         "PYTHONUTF8": "1",
-        "CODEGRAPH_DB": "graphrag_code.sqlite"
+        "GRAPHRAG_CODE_DB": "graphrag_code.sqlite"
       }
     }
   }
 }
 ```
 
-*Note: If your database is located elsewhere, modify `CODEGRAPH_DB` to point to the absolute path of your `.sqlite` file.*
+*Note: If your database is located elsewhere, modify `GRAPHRAG_CODE_DB` to point to the absolute path of your `.sqlite` file.*
