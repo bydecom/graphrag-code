@@ -120,6 +120,62 @@ class TestGetNodeIndex(unittest.TestCase):
         self.assertEqual(len(stored), 2)
 
 
+class TestSymbolDisambiguation(unittest.TestCase):
+    """Disambiguation contract: ambiguous names must be surfaced, not guessed."""
+
+    def setUp(self):
+        self.db_path = "test_disambig.sqlite"
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+        build_mock_db(self.db_path)
+        self.engine = GraphRAGCodeEngine(self.db_path)
+        self.engine.load_graph()
+
+    def tearDown(self):
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
+
+    def test_find_candidates_unique(self):
+        """Unique symbol → exactly one candidate index."""
+        candidates = self.engine.find_candidates("ProcessPayment")
+        self.assertEqual(len(candidates), 1)
+
+    def test_find_candidates_unknown(self):
+        """Unknown symbol → empty candidate list (no crash)."""
+        self.assertEqual(self.engine.find_candidates("DoesNotExist_XYZ"), [])
+
+    def test_find_candidates_ambiguous(self):
+        """'validate' exists in 2 files → 2 candidates."""
+        candidates = self.engine.find_candidates("validate")
+        self.assertEqual(len(candidates), 2)
+
+    def test_resolve_symbol_unique(self):
+        """Unique → (idx, [single described candidate])."""
+        idx, candidates = self.engine.resolve_symbol("ProcessPayment")
+        self.assertIsNotNone(idx)
+        self.assertEqual(len(candidates), 1)
+        self.assertIn("name", candidates[0])
+        self.assertIn("file_path", candidates[0])
+
+    def test_resolve_symbol_ambiguous_returns_none_idx(self):
+        """Ambiguous → idx is None so the caller cannot silently proceed."""
+        idx, candidates = self.engine.resolve_symbol("validate")
+        self.assertIsNone(idx)
+        self.assertEqual(len(candidates), 2)
+
+    def test_resolve_symbol_not_found(self):
+        """Unknown → (None, [])."""
+        idx, candidates = self.engine.resolve_symbol("Nope_ZZZ")
+        self.assertIsNone(idx)
+        self.assertEqual(candidates, [])
+
+    def test_get_node_index_backward_compatible(self):
+        """Legacy wrapper still returns a valid first index for ambiguous names."""
+        idx = self.engine.get_node_index("validate")
+        self.assertIsNotNone(idx)
+        self.assertIn(idx, self.engine.graph.node_indices())
+
+
 class TestPPRReturnSemantics(unittest.TestCase):
     """
     Test semantic của return value: None vs [] vs list có data.

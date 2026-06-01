@@ -106,22 +106,27 @@ class GraphRAGCodeEngine:
         
         logging.info(f"[-] Successfully loaded Graph: {self.graph.num_nodes()} Nodes, {self.graph.num_edges()} Edges (+ reversed graph).")
 
-    def get_node_index(self, symbol_name: str):
-        """Resolve a symbol name to its rustworkx index.
+    def find_candidates(self, symbol_name: str) -> list:
+        """Resolve a symbol name to ALL matching rustworkx indices.
 
-        Exact match is O(1) via the `name_to_rx_idx` dict. If that misses, we fall
-        back to an O(N) suffix scan to resolve short names against stored FQNs
-        (e.g. 'GraphEngine' -> '<module: engine.py>::GraphEngine').
+        This is the disambiguation primitive. Resolution is tiered so that the
+        most precise interpretation wins and we never mix tiers:
+          1. Exact match against stored FQNs (O(1) via `name_to_rx_idx`).
+             A fully-qualified name like '<module: engine.py>::GraphEngine' is
+             globally unique, so this is how callers disambiguate.
+          2. Suffix match (O(N)) for short names: 'GraphEngine' resolves against
+             '<module: engine.py>::GraphEngine' or 'Outer.GraphEngine'.
+
+        Returns:
+            A list of rustworkx node indices. Empty if the symbol is unknown,
+            length 1 if unambiguous, length > 1 if ambiguous.
         """
-        # 1. Exact match
+        # 1. Exact match takes precedence — never fall through to suffix.
         if symbol_name in self.name_to_rx_idx:
             idx = self.name_to_rx_idx[symbol_name]
-            if isinstance(idx, list):
-                logging.warning(f"[!] Ambiguous symbol '{symbol_name}': found {len(idx)} matches. Using first occurrence.")
-                return idx[0]
-            return idx
-            
-        # 2. Suffix match (e.g. searching 'GraphEngine' matches '<module: engine.py>::GraphEngine')
+            return list(idx) if isinstance(idx, list) else [idx]
+
+        # 2. Suffix match (short name against stored FQNs)
         matches = []
         for name, idx in self.name_to_rx_idx.items():
             if name.endswith(f"::{symbol_name}") or name.endswith(f".{symbol_name}"):
@@ -129,13 +134,61 @@ class GraphRAGCodeEngine:
                     matches.extend(idx)
                 else:
                     matches.append(idx)
-                    
-        if matches:
-            if len(matches) > 1:
-                logging.warning(f"[!] Ambiguous symbol '{symbol_name}': found {len(matches)} matches (Suffix). Using first occurrence.")
-            return matches[0]
-            
-        return None
+
+        return matches
+
+    def describe_candidates(self, candidates: list) -> list:
+        """Map a list of rx indices to human-readable metadata dicts.
+
+        Each dict exposes the FQN (`name`) needed to re-query unambiguously.
+        """
+        described = []
+        for idx in candidates:
+            info = self.rx_idx_to_symbol_info[idx]
+            described.append({
+                "name": info["name"],            # FQN — use this to re-query precisely
+                "kind": info["kind"],
+                "file_path": info["file_path"],
+                "start_line": info["start_line"],
+            })
+        return described
+
+    def resolve_symbol(self, symbol_name: str):
+        """Resolve a symbol name into a structured (index, candidates) result.
+
+        This is the disambiguation-aware entry point that callers (e.g. the MCP
+        layer) should prefer over `get_node_index`. It distinguishes three cases
+        instead of silently guessing:
+
+        Returns a tuple ``(rx_idx, candidates)`` where:
+          - unique     -> ``(idx, [described])``      exactly one match
+          - ambiguous  -> ``(None, [described, ...])``  caller must disambiguate
+          - not found  -> ``(None, [])``
+        """
+        candidates = self.find_candidates(symbol_name)
+        if not candidates:
+            return None, []
+        if len(candidates) == 1:
+            return candidates[0], self.describe_candidates(candidates)
+        return None, self.describe_candidates(candidates)
+
+    def get_node_index(self, symbol_name: str):
+        """Resolve a symbol name to a single rustworkx index (best-effort).
+
+        Backwards-compatible convenience wrapper around `find_candidates`: when
+        the name is ambiguous it logs a warning and returns the first match. New
+        callers that need to surface ambiguity to a user should use
+        `resolve_symbol` instead so the choice isn't silently made for them.
+        """
+        candidates = self.find_candidates(symbol_name)
+        if not candidates:
+            return None
+        if len(candidates) > 1:
+            logging.warning(
+                f"[!] Ambiguous symbol '{symbol_name}': found {len(candidates)} matches. "
+                f"Using first occurrence. Pass a fully-qualified name to disambiguate."
+            )
+        return candidates[0]
 
     def _extract_source_code(self, file_path, start_line, end_line):
         """Internal helper: Read the file and slice the exact code block (O(1) I/O)"""
