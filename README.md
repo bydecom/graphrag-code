@@ -90,6 +90,23 @@ open examples/graph_visualizer.html
 
 ---
 
+## Related Work
+
+GraphRAG-Code targets **structural context for coding agents** (call/import graphs, blast radius, dependency snippets via MCP). It is **not** the [Microsoft GraphRAG](https://github.com/microsoft/graphrag) project, which indexes **unstructured text** with a different graph and query stack.
+
+Work directly relevant to this problem:
+
+| Reference | Relevance to GraphRAG-Code |
+|-----------|----------------------------|
+| [Aider Repo Map](https://aider.chat/docs/repomap.html) (Gauthier, 2024) | Tree-sitter + PageRank for repo context; we use **directed** graphs, **Personalized** PageRank from a seed symbol, and MCP-delivered **source blocks**. |
+| *Codebase-Memory* (Vogel et al., 2026) | Tree-sitter knowledge graph + **MCP** for code exploration; closest system parallel. We add PPR-based ranking with intent-specific merge weights and snippet extraction. |
+| [Reliable Graph-RAG for Codebases](https://arxiv.org/abs/2601.08773) (Chinthareddy, 2026) | AST-derived graphs vs LLM-built graphs on **repository** structural tracing; supports deterministic AST indexing for multi-hop code queries. |
+| *Practical Code RAG at Scale* (Galimzyanov et al., NeurIPS 2025) | Retrieval quality depends on **task type**; motivates separate tools (`get_impact` vs `get_context`) and a future hybrid intent router (graph vs lexical). |
+
+Deeper positioning, debates, and metrics: [`docs/RESEARCH.md`](docs/RESEARCH.md) · [`docs/LITERATURE_REVIEW.md`](docs/LITERATURE_REVIEW.md).
+
+---
+
 ## ⚠️ Known Limitations
 - Currently, GraphRAG-Code natively supports Python codebases (multi-language support is planned for future releases).
 - **Latency overhead of ~20-25% on tiny codebases** (<20 files) due to MCP initialization and in-memory graph loading. This is compensated by massive performance gains and token savings on larger codebases.
