@@ -27,6 +27,42 @@ except FileNotFoundError as e:
     logging.warning(f"⚠️ [WARNING] Server initialized in standby mode. Database '{db_file}' not found. Please run the indexer first.")
     engine = None
 
+def _format_disambiguation(symbol_name: str, candidates: list) -> str:
+    """Render an ambiguous-symbol prompt that tells the agent how to re-query.
+
+    Rather than silently picking the first match (which can corrupt blast-radius
+    answers and evaluation seeds), we surface every candidate with its
+    fully-qualified name so the next call resolves to exactly one node.
+    """
+    msg = (
+        f"[?] Ambiguous symbol `{symbol_name}`: found {len(candidates)} matches. "
+        f"Re-run this tool with one of the fully-qualified names below:\n\n"
+    )
+    for c in candidates:
+        file_short = c["file_path"].split("/")[-1].split("\\")[-1]
+        msg += (
+            f"- `{c['name']}` [{c['kind'].upper()}] "
+            f"in `{file_short}` (line {c['start_line'] + 1})\n"
+        )
+    return msg
+
+
+def _resolve_or_disambiguate(symbol_name: str):
+    """Resolve a symbol for a tool call.
+
+    Returns ``(rx_idx, error_message)``:
+      - unique     -> ``(idx, None)``
+      - ambiguous  -> ``(None, <disambiguation prompt>)``  return the message directly
+      - not found  -> ``(None, None)``  caller emits its own not-found message
+    """
+    idx, candidates = engine.resolve_symbol(symbol_name)
+    if idx is not None:
+        return idx, None
+    if candidates:
+        return None, _format_disambiguation(symbol_name, candidates)
+    return None, None
+
+
 @mcp.tool()
 def get_pruned_context(seed_node: str, top_k: int = 5, max_tokens: int = 2000) -> str:
     """
@@ -45,7 +81,11 @@ def get_pruned_context(seed_node: str, top_k: int = 5, max_tokens: int = 2000) -
     """
     if engine is None:
         return "[!] System Error: Standby mode active. Please run `indexer.py` to generate the DB first."
-        
+
+    _, ambiguity = _resolve_or_disambiguate(seed_node)
+    if ambiguity:
+        return ambiguity
+
     results = engine.get_context_ppr(seed_node, top_k)
     
     if results is None:
@@ -86,9 +126,10 @@ def get_callers(function_name: str) -> str:
     """
     if engine is None:
         return "[!] System Error: Standby mode active. Please run `indexer.py` to generate the DB first."
-        
-    seed_idx = engine.get_node_index(function_name)
-            
+
+    seed_idx, ambiguity = _resolve_or_disambiguate(function_name)
+    if ambiguity:
+        return ambiguity
     if seed_idx is None:
         return f"[!] Symbol '{function_name}' not found in the Graph."
         
@@ -131,6 +172,10 @@ def get_impact(symbol_name: str, top_k: int = 10) -> str:
     """
     if engine is None:
         return "[!] System Error: Standby mode. Please run the indexer first."
+
+    _, ambiguity = _resolve_or_disambiguate(symbol_name)
+    if ambiguity:
+        return ambiguity
 
     results = engine.get_context_ppr(symbol_name, top_k=top_k, backward_weight=IMPACT_BACKWARD_WEIGHT)
     # IMPACT_BACKWARD_WEIGHT (0.9) → force PPR to lean towards upstream callers (blast radius direction)
@@ -207,8 +252,11 @@ def get_context(symbol_name: str, top_k: int = 5, max_tokens: int = 1500) -> str
     if engine is None:
         return "[!] System Error: Standby mode. Please run the indexer first."
 
+    seed_idx, ambiguity = _resolve_or_disambiguate(symbol_name)
+    if ambiguity:
+        return ambiguity
+
     # ── Section 1: Upstream Callers (who is calling this symbol?) ────────────────
-    seed_idx = engine.get_node_index(symbol_name)
 
     callers_section = ""
     if seed_idx is not None:
