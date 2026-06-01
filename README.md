@@ -3,6 +3,8 @@
 
 *A directed-graph PPR engine that ranks structurally related code and extracts exact source blocks (not just metadata). A single tunable weight selects between two query modes: downstream dependency context and upstream blast-radius.*
 
+**Author:** [Bydecom](https://github.com/bydecom)
+
 ## Why GraphRAG-Code? (The "Why")
 
 In 2026, dumping entire raw files into LLM Agents is highly inefficient, leading to high token costs and increased hallucination rates.  
@@ -129,6 +131,12 @@ Work directly relevant to this problem:
 | *Practical Code RAG at Scale* (Galimzyanov et al., NeurIPS 2025) | Retrieval quality depends on **task type**; motivates separate tools (`get_impact` vs `get_context`) and a future hybrid intent router (graph vs lexical). |
 
 Deeper positioning, debates, and metrics: [`docs/RESEARCH.md`](docs/RESEARCH.md) · [`docs/LITERATURE_REVIEW.md`](docs/LITERATURE_REVIEW.md).
+
+---
+
+## Acknowledgments
+
+Developed primarily in [Cursor](https://cursor.com). Architecture, evaluation design (`eval_retrieval.py`), and shipped code are the author's responsibility.
 
 ---
 
