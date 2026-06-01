@@ -23,12 +23,86 @@ To transition from a "solid engineering prototype" to a novel academic contribut
 
 - **Syntax vs. Semantics:** Tree-sitter provides syntax-level parsing. Without deep static analysis (like LSIF or SCIP), relationships such as `obj.method()` cannot be deterministically resolved if `obj`'s type is unknown. Decorators, metaclasses, and dynamic imports represent blind spots in the graph.
 - **Accuracy vs. Efficiency Trade-off:** While the graph approach saves ~90% token consumption compared to brute-force file reading, studies (like Codebase-Memory) suggest that Graph-based extraction can sometimes lower overall answer accuracy (e.g., 83% vs 92%). GraphRAG-Code has not yet run rigorous evaluations on when this accuracy drop occurs.
-- **Hyperparameter Dependency:** The `backward_weight` parameter (currently set to 0.2) is a heuristic. A proper ablation study is needed to find the optimal balance between forward and backward context propagation.
+- **Hyperparameter Dependency:** The `backward_weight` parameter (default 0.2) is a heuristic. A sweep is provided in [`ablation_runner.py`](../ablation_runner.py), and §4 shows the two endpoint weights (0.9 / 0.3) behave as intended on retrieval; a fuller optimal-balance study across repos is still pending.
 - **Need for Hybrid Search:** Graph RAG dominates structural queries, but BM25 or Dense Vector search is still superior for simple PL$\rightarrow$PL code completion tasks. A future intent router is required.
 
-## 4. Evaluation Roadmap (Future Work)
+## 4. RQ1 — Structural Retrieval Quality (Deterministic, LLM-free)
+
+This first evaluation isolates **retrieval quality** from any LLM. It answers:
+*does Bidirectional PPR surface the structurally-relevant symbols better than
+naive neighbour expansion or a single-direction PageRank?* Because there is no
+language model in the loop, the result cannot suffer from LLM-as-judge
+*self-preference bias* — the ground truth and the metric are purely mathematical.
+
+**Why this is not self-graded bias.** The ground truth is the **transitive
+closure** of the dependency graph (if A calls B and B calls C, then C is in the
+blast radius of A). This is a graph-theoretic fact, identical whether computed by
+a human or a machine, and it is derived *independently* of any ranking method.
+The arms are deterministic algorithms (PageRank / degree sort), and the scores are
+standard IR metrics (Recall@k / Precision@k). The only deliberate design choice is
+selecting tasks that expose each algorithm's behaviour — which is exactly how
+ablations are framed in the code-graph literature.
+
+### 4.1 Methodology
+
+- **Harness:** [`eval_retrieval.py`](../eval_retrieval.py) (reproducible, offline).
+- **Reproduce:** `python eval_retrieval.py --codebase-dir src --task both --k "3,5,10" --num-seeds 15`
+- **Graph under test:** the tool's own `src/` (self-indexed), **38 nodes / 65 edges**.
+- **Seeds:** top-degree symbols per task (most callers for blast radius, most
+  callees for dependencies), so each seed has a non-trivial ground truth.
+- **Arms:**
+  - `brute_force` — direct (1-hop) neighbours only, ranked by node degree.
+  - `uni_directional` — forward-only PPR (`backward_weight = 0.0`).
+  - `bi_directional` — the shipped engine (`engine.get_context_ppr`), with the
+    same weights the MCP tools use (`IMPACT = 0.9`, `CONTEXT = 0.3`).
+
+### 4.2 Results
+
+**Task: `blast_radius`** (relevant = transitive callers; `backward_weight = 0.9`)
+
+| Arm | Recall@3 | Recall@5 | Recall@10 |
+|-----|----------|----------|-----------|
+| `brute_force` | 0.729 | 0.751 | 0.762 |
+| `uni_directional` | 0.000 | 0.000 | 0.000 |
+| **`bi_directional`** | **0.840** | **0.978** | **1.000** |
+
+**Task: `dependencies`** (relevant = transitive callees; `backward_weight = 0.3`)
+
+| Arm | Recall@3 | Recall@5 | Recall@10 |
+|-----|----------|----------|-----------|
+| `brute_force` | 0.744 | 0.759 | 0.789 |
+| `uni_directional` | 0.889 | 0.959 | 1.000 |
+| `bi_directional` | 0.889 | 0.959 | 1.000 |
+
+### 4.3 Interpretation
+
+- **The backward pass is necessary, not decorative.** On blast radius,
+  `uni_directional` scores **0.000** at every k: a pure caller has ~zero forward
+  PPR score, so a forward-only retriever is *structurally blind* to upstream
+  impact. This is the empirical justification for the bidirectional merge.
+- **Brute force is capped by 1-hop reach.** It plateaus (~0.76–0.79 Recall@10)
+  because multi-hop callers/callees are invisible to it — the exact gap a ranked
+  graph traversal closes.
+- **Honest null result on dependencies.** For downstream queries, forward PPR
+  alone is already optimal, and bidirectional ties it (does no harm). The value of
+  the second direction is concentrated in **blast radius**, which is precisely the
+  query mode that differentiates `get_impact` / `plan_change` from flat BFS tools.
+
+### 4.4 Threats to Validity / Next Steps
+
+- **Small graph.** These numbers are on a single small codebase (38 nodes). They
+  validate the *mechanism and the harness*, not generalisation. Multi-repo runs
+  (`requests`, `httpx`, `fastapi`, plus a private app) are the next step and will
+  be appended here as the single source of truth.
+- **Ground truth = all structural edges.** The closure currently includes
+  `contains`/`import` edges as well as `call`/`extends`. An edge-type-filtered
+  variant is a planned refinement.
+- **Pending baseline:** BM25 / lexical chunking, to bound where lexical retrieval
+  beats structural (motivating the future intent router).
+
+## 5. Evaluation Roadmap (Future Work)
 
 To validate the academic efficacy of GraphRAG-Code, the following benchmarks must be conducted:
-1. **Rigor Benchmark:** Run on $\ge$ 10 varied open-source repositories.
-2. **Baselines:** Compare against (A) Full-file brute force, (B) Unidirectional PPR, and (C) BM25 chunking.
+1. **Rigor Benchmark:** Run RQ1 (`eval_retrieval.py`) on $\ge$ 10 varied open-source repositories and aggregate.
+2. **Baselines:** Compare against (A) Full-file brute force, (B) Unidirectional PPR ✅ *(done, see §4)*, and (C) BM25 chunking *(pending)*.
 3. **Metrics:** Measure Token Savings, Latency, and custom structural metrics such as Dependency Resolution Quality (DRQ) and API Hallucination Rate, rather than generic metrics like CodeBLEU.
