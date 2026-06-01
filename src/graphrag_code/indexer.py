@@ -208,16 +208,19 @@ def parse_python_file(file_path, conn):
             symbol_map[name] = symbol_id
             logging.info(f"  [+] Node: {kind.capitalize()} '{name}' (ID: {symbol_id}, Lines: {start_line}-{end_line})")
             
-            # Add containment edge if function is nested in a class
-            if kind == 'function':
-                parent_name = find_enclosing_symbol(block_node, source_code, module_name)
-                parent_id = symbol_map.get(parent_name)
-                if parent_id:
-                    cursor.execute(
-                        "INSERT INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
-                        (parent_id, name, 'contains')
-                    )
-                    logging.info(f"  [->] Edge: '{parent_name}' contains function '{name}'")
+            # Add a containment edge linking this symbol to its enclosing scope.
+            # Applies to BOTH functions and classes so every top-level symbol stays
+            # attached to its module node (otherwise class-only files float as
+            # isolated/standalone modules in the graph). Nested symbols attach to
+            # their enclosing class/function instead.
+            parent_name = find_enclosing_symbol(block_node, source_code, module_name)
+            parent_id = symbol_map.get(parent_name)
+            if parent_id and parent_id != symbol_id:
+                cursor.execute(
+                    "INSERT INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
+                    (parent_id, short_name, 'contains')
+                )
+                logging.info(f"  [->] Edge: '{parent_name}' contains {kind} '{name}'")
 
     BUILTIN_IGNORE = {'print', 'len', 'range', 'str', 'int', 'list', 'dict', 'isinstance', 'type', 'super', 'enumerate', 'zip'}
 
