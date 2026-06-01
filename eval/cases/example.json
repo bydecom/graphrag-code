@@ -1,0 +1,9 @@
+{
+  "repo": "graphrag-code (self)",
+  "note": "Example held-out cases. Run: python eval_retrieval.py --codebase-dir src --cases eval/cases/example.json",
+  "cases": [
+    { "seed": "get_context_ppr", "task": "blast_radius",  "note": "core ranking hub" },
+    { "seed": "get_node_index",  "task": "blast_radius",  "note": "resolver used everywhere" },
+    { "seed": "parse_python_file", "task": "dependencies", "note": "downstream indexer calls" }
+  ]
+}

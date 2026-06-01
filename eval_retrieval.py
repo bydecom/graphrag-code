@@ -236,6 +236,61 @@ def evaluate_task(engine, task: str, seeds: list, k_values: list) -> dict:
     }
 
 
+def evaluate_cases(engine, cases: list, k_values: list) -> dict:
+    """Evaluate explicit held-out (seed, task) cases authored by hand.
+
+    Guards against the (mild) circularity of auto-selecting seeds by degree:
+    a human picks the symbol and the expected query mode, and we report per-case
+    recall for every arm. `seed` may be a short name or a fully-qualified name;
+    it is resolved through the engine's normal lookup.
+    """
+    max_k = max(k_values)
+    rows = []
+    for case in cases:
+        seed_name = case["seed"]
+        task = case.get("task", "blast_radius")
+        idx = engine.get_node_index(seed_name)
+        if idx is None:
+            rows.append({"seed": seed_name, "task": task, "error": "symbol not found"})
+            continue
+        resolved = engine.rx_idx_to_symbol_info[idx]["name"]
+        relevant = ground_truth(engine, idx, task)
+        bw = IMPACT_BACKWARD_WEIGHT if task == "blast_radius" else CONTEXT_BACKWARD_WEIGHT
+        ranked = {
+            "brute_force": brute_force_arm(engine, idx, task, max_k),
+            "uni_directional": uni_directional_arm(engine, resolved, max_k),
+            "bi_directional": bi_directional_arm(engine, resolved, max_k, bw),
+        }
+        metrics = {
+            arm: {f"recall@{k}": round(recall_at_k(ranked[arm], relevant, k), 4) for k in k_values}
+            for arm in ARMS
+        }
+        rows.append({
+            "seed": seed_name,
+            "resolved": resolved,
+            "task": task,
+            "note": case.get("note", ""),
+            "relevant_count": len(relevant),
+            "metrics": metrics,
+        })
+    return {"mode": "held_out_cases", "k_values": k_values, "cases": rows}
+
+
+def print_cases_report(report: dict):
+    print("\n=== RQ1 | Held-out cases ===")
+    for row in report["cases"]:
+        if "error" in row:
+            print(f"  [SKIP] {row['seed']} ({row['task']}): {row['error']}")
+            continue
+        print(f"\n  Seed: {row['resolved']}  [task={row['task']}, "
+              f"relevant={row['relevant_count']}]"
+              + (f"  // {row['note']}" if row['note'] else ""))
+        for arm in ARMS:
+            cells = "  ".join(f"R@{k}={row['metrics'][arm][f'recall@{k}']:.3f}"
+                              for k in report["k_values"])
+            print(f"    {arm:<18} {cells}")
+
+
 # =============================================================================
 # REPORTING
 # =============================================================================
@@ -308,6 +363,41 @@ def save_reports(reports: list, meta: dict, out_dir: Path):
 # DB BOOTSTRAP (offline, no API key)
 # =============================================================================
 
+def load_cases(path: str) -> list:
+    """Load held-out cases from a JSON or YAML file.
+
+    Accepts either a bare list of cases or an object with a top-level `cases`
+    key. YAML is supported only if PyYAML is installed (JSON needs no deps).
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    if path.endswith((".yaml", ".yml")):
+        try:
+            import yaml  # optional
+        except ImportError:
+            raise SystemExit("[!] PyYAML not installed. Use a .json cases file or `pip install pyyaml`.")
+        data = yaml.safe_load(text)
+    else:
+        data = json.loads(text)
+    cases = data.get("cases", data) if isinstance(data, dict) else data
+    if not isinstance(cases, list):
+        raise SystemExit("[!] Cases file must be a list (or an object with a 'cases' list).")
+    return cases
+
+
+def list_seeds(engine, n: int):
+    """Print the top-degree symbols (with exact FQN) per task.
+
+    Use this to author `--seeds` / `--cases` files without guessing FQNs:
+    the printed names are exactly what the engine resolves against.
+    """
+    for task in ("blast_radius", "dependencies"):
+        print(f"\n# Top {n} seeds for '{task}' (FQN | degree):")
+        for idx in auto_select_seeds(engine, task, n):
+            info = engine.rx_idx_to_symbol_info[idx]
+            deg = engine.graph.in_degree(idx) if task == "blast_radius" else engine.graph.out_degree(idx)
+            print(f"  {info['name']}  | {deg}")
+
+
 def build_db_from_dir(codebase_dir: str) -> str:
     """Index a source directory into a temp SQLite DB and return its path."""
     from graphrag_code.indexer import init_db, scan_directory
@@ -333,6 +423,10 @@ def parse_args():
     p.add_argument("--k", default="3,5,10", help="Comma-separated k values (default: 3,5,10).")
     p.add_argument("--num-seeds", type=int, default=15, help="Max seeds to auto-select per task.")
     p.add_argument("--seeds", default=None, help="Comma-separated seed names (overrides auto-select).")
+    p.add_argument("--cases", default=None,
+                   help="Path to a JSON/YAML file of held-out {seed, task} cases.")
+    p.add_argument("--list-seeds", type=int, default=0, metavar="N",
+                   help="Print top-N seed FQNs per task and exit (helps author --cases files).")
     p.add_argument("--out", default="benchmark_results", help="Output directory.")
     return p.parse_args()
 
@@ -358,6 +452,25 @@ def main():
     engine = GraphRAGCodeEngine(db_path)
     engine.load_graph()
     meta = {"db": db_path, "nodes": engine.graph.num_nodes(), "edges": engine.graph.num_edges()}
+
+    if args.list_seeds:
+        list_seeds(engine, args.list_seeds)
+        return
+
+    # Held-out cases path: explicit (seed, task) pairs authored by hand.
+    if args.cases:
+        cases = load_cases(args.cases)
+        report = evaluate_cases(engine, cases, k_values)
+        print_cases_report(report)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = Path(args.out) / f"rq1_cases_{timestamp}"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "rq1_cases.json").write_text(
+            json.dumps({"meta": meta, "report": report}, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        print(f"\n[OK] Saved: {out_dir / 'rq1_cases.json'}")
+        return
 
     tasks = ["blast_radius", "dependencies"] if args.task == "both" else [args.task]
 

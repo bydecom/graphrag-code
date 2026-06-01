@@ -61,6 +61,26 @@ class TestEvalRetrieval(unittest.TestCase):
         self.assertIn("ApiGateway", bi)
         self.assertNotIn("ApiGateway", uni)
 
+    def test_evaluate_cases_held_out(self):
+        """Held-out cases evaluator returns per-arm recall for each named seed."""
+        cases = [
+            {"seed": "ProcessPayment", "task": "blast_radius", "note": "hub"},
+            {"seed": "ProcessPayment", "task": "dependencies"},
+        ]
+        report = ev.evaluate_cases(self.engine, cases, [3, 5])
+        self.assertEqual(report["mode"], "held_out_cases")
+        self.assertEqual(len(report["cases"]), 2)
+        for row in report["cases"]:
+            self.assertNotIn("error", row)
+            for arm in ev.ARMS:
+                self.assertIn("recall@5", row["metrics"][arm])
+                self.assertLessEqual(row["metrics"][arm]["recall@5"], 1.0)
+
+    def test_evaluate_cases_unknown_seed_marked(self):
+        """An unresolved seed is reported as an error, not a crash."""
+        report = ev.evaluate_cases(self.engine, [{"seed": "Nope_ZZZ", "task": "blast_radius"}], [5])
+        self.assertIn("error", report["cases"][0])
+
     def test_evaluate_task_smoke(self):
         """End-to-end driver returns a well-formed summary for all arms."""
         seeds = ev.auto_select_seeds(self.engine, "blast_radius", num_seeds=5)
