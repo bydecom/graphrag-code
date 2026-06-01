@@ -338,6 +338,161 @@ def get_context(symbol_name: str, top_k: int = 5, max_tokens: int = 1500) -> str
 
     return report
 
+# ─────────────────────────────────────────────────────────────────────────────
+# TOOL 3: plan_change
+# One-shot PRE-EDIT briefing. Composes existing primitives (no new algorithm):
+#   upstream  = get_impact's Bidirectional PPR (blast radius, ranked)
+#   downstream = get_context's forward PPR (dependencies you may have to follow)
+# Metadata-first by design: returns names/files/scores, NOT full source, so the
+# agent gets a cheap "what should I be careful about?" answer before touching code.
+# Pull actual snippets with get_context / get_pruned_context only when needed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _change_risk(direct_caller_count: int) -> str:
+    """Overall risk header derived from the number of DIRECT upstream callers.
+
+    Single, explainable definition (GitNexus-style thresholds) — deliberately
+    NOT mixed with the per-row PPR confidence tiers used inside get_impact.
+    """
+    if direct_caller_count >= 21:
+        return "🔴 HIGH"
+    if direct_caller_count >= 6:
+        return "🟡 MEDIUM"
+    return "🟢 LOW"
+
+
+@mcp.tool()
+def plan_change(
+    symbol_name: str,
+    top_k_upstream: int = 8,
+    top_k_downstream: int = 5,
+    include_snippets: bool = False,
+) -> str:
+    """
+    PRE-EDIT change plan — call this BEFORE modifying a function or class.
+
+    Produces a single, token-light briefing so an agent knows the blast radius
+    and dependencies up front, instead of editing blind. Composes two existing
+    PPR passes:
+      - Upstream (blast radius): who breaks if this changes — ranked by
+        Bidirectional PPR, so strong indirect callers (hop 2+) surface, not just
+        direct callers.
+      - Downstream (dependencies): what this relies on and may need to follow.
+
+    Risk level (header) is based purely on the count of DIRECT callers — a
+    factual graph signal, not an LLM recommendation.
+
+    Args:
+        symbol_name: The function/class you are about to modify.
+        top_k_upstream: Max ranked upstream (blast radius) symbols (default: 8).
+        top_k_downstream: Max ranked downstream dependency symbols (default: 5).
+        include_snippets: If True, append the seed's source code (off by default
+                          to keep the plan compact — use get_context for full code).
+
+    Returns:
+        Markdown briefing: Risk → Blast Radius (upstream) → Dependencies
+        (downstream) → Affected files. No source code unless include_snippets.
+    """
+    if engine is None:
+        return "[!] System Error: Standby mode. Please run the indexer first."
+
+    seed_idx, ambiguity = _resolve_or_disambiguate(symbol_name)
+    if ambiguity:
+        return ambiguity
+    if seed_idx is None:
+        return f"[!] Symbol '{symbol_name}' not found in the Graph."
+
+    # ── Direct callers (depth-1) — drives the overall risk header ───────────────
+    direct_callers = [
+        engine.rx_idx_to_symbol_info[idx]
+        for idx in engine.reversed_graph.successor_indices(seed_idx)
+    ]
+    risk = _change_risk(len(direct_callers))
+
+    # ── Upstream blast radius (ranked) ──────────────────────────────────────────
+    upstream = engine.get_context_ppr(
+        symbol_name, top_k=top_k_upstream, backward_weight=IMPACT_BACKWARD_WEIGHT
+    ) or []
+    upstream = [r for r in upstream if r["name"] != symbol_name]
+
+    # ── Downstream dependencies (ranked) ────────────────────────────────────────
+    downstream = engine.get_context_ppr(
+        symbol_name, top_k=top_k_downstream, backward_weight=CONTEXT_BACKWARD_WEIGHT
+    ) or []
+    downstream = [r for r in downstream if r["name"] != symbol_name]
+
+    seed_data = engine.rx_idx_to_symbol_info[seed_idx]
+    seed_file = seed_data["file_path"]
+
+    # ── Assemble report ─────────────────────────────────────────────────────────
+    res = f"### Change Plan for `{symbol_name}`\n"
+    res += f"> **Overall Risk: {risk}** — based on {len(direct_callers)} direct caller(s).\n\n"
+
+    # Direct callers (depth-1) — the symbols that break first on a breaking change.
+    # Listed by name (metadata only) so the agent doesn't have to infer them from
+    # the PPR table, which is ranked by relevance rather than call-distance.
+    if direct_callers:
+        res += f"#### 🎯 Direct Callers ({len(direct_callers)})\n"
+        for c in direct_callers:
+            file_short = c["file_path"].split("/")[-1].split("\\")[-1]
+            res += f"- `{c['name']}` [{c['kind'].upper()}] in `{file_short}`\n"
+        res += "\n"
+
+    # Blast radius (upstream)
+    res += f"#### ⬆️ Blast Radius — Upstream (ranked by PPR)\n"
+    if upstream:
+        res += "| Rank | Symbol | File | PPR Score |\n"
+        res += "|------|--------|------|-----------|\n"
+        for rank, item in enumerate(upstream, 1):
+            file_short = item["file_path"].split("/")[-1].split("\\")[-1]
+            res += f"| {rank} | `{item['name']}` | `{file_short}` | {item['score']} |\n"
+    elif direct_callers:
+        res += "- *(Callers exist but scored below threshold — see `get_impact` for the full table.)*\n"
+    else:
+        res += "- *(No callers — likely an entry point or top-level symbol. Low breakage risk.)*\n"
+
+    # Dependencies (downstream)
+    res += f"\n#### ⬇️ Dependencies — Downstream (ranked by PPR)\n"
+    if downstream:
+        res += "| Rank | Symbol | File | PPR Score |\n"
+        res += "|------|--------|------|-----------|\n"
+        for rank, item in enumerate(downstream, 1):
+            file_short = item["file_path"].split("/")[-1].split("\\")[-1]
+            res += f"| {rank} | `{item['name']}` | `{file_short}` | {item['score']} |\n"
+    else:
+        res += "- *(No significant downstream dependencies detected.)*\n"
+
+    # Affected files — factual aggregation, no advice.
+    # Union of direct callers + ranked upstream/downstream, so a direct caller's
+    # file is never dropped just because it fell outside top_k of the PPR table.
+    affected_files = []
+    for item in direct_callers + upstream + downstream:
+        fp = item["file_path"]
+        if fp != seed_file and fp not in affected_files:
+            affected_files.append(fp)
+    res += f"\n#### 📁 Affected Files ({len(affected_files)})\n"
+    if affected_files:
+        for fp in affected_files:
+            res += f"- `{fp}`\n"
+    else:
+        res += f"- *(Changes appear contained within `{seed_file}`.)*\n"
+
+    # Optional seed source — off by default to keep the plan compact
+    if include_snippets:
+        source_code = engine._extract_source_code(
+            seed_file, seed_data["start_line"], seed_data["end_line"]
+        )
+        res += f"\n#### 📄 Source — `{symbol_name}`\n"
+        res += f"- **File:** `{seed_file}`\n"
+        res += "```python\n" + source_code + "\n```\n"
+
+    res += (
+        f"\n> ℹ️ Metadata-only plan. Upstream/downstream ranked by Bidirectional PPR "
+        f"(relevance, not call-distance). For full source, call `get_context`."
+    )
+    return res
+
+
 @mcp.tool()
 def list_symbols(file_path: str = "") -> str:
     """

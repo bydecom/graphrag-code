@@ -51,10 +51,12 @@ async def run_cli_agent():
                         "You are a world-class AI Software Architect working on a large codebase.\n"
                         "Mandatory procedure before analyzing or modifying code:\n"
                         "1. ALWAYS call 'list_symbols' first for a structural overview.\n"
-                        "2. For deep analysis of ONE symbol: use 'get_context' (360° view: callers + source + deps in one call).\n"
-                        "3. Before editing anything: call 'get_impact' to see blast radius with confidence scores.\n"
-                        "4. For broad context across multiple related symbols: use 'get_pruned_context'.\n"
-                        "Never edit code without first checking get_impact. Never guess dependencies."
+                        "2. Before editing ANY symbol: call 'plan_change' first — it gives a single, token-light\n"
+                        "   pre-edit briefing (overall risk + ranked upstream blast radius + downstream deps).\n"
+                        "3. For deep analysis / to read actual code: use 'get_context' (360° view: callers + source + deps).\n"
+                        "4. For the full blast-radius table only: use 'get_impact'.\n"
+                        "5. For broad context across multiple related symbols: use 'get_pruned_context'.\n"
+                        "Never edit code without first calling plan_change. Never guess dependencies."
                     )
                 }
             ]

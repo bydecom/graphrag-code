@@ -59,6 +59,19 @@ graphrag-code-agent
 If you use **Cursor IDE** or **Claude Desktop**, GraphRAG-Code exposes standard Model Context Protocol (MCP) tools out-of-the-box.  
 👉 See detailed instructions in [docs/CURSOR_CLAUDE_INTEGRATION.md](docs/CURSOR_CLAUDE_INTEGRATION.md).
 
+### 🧰 MCP Tools
+
+| Tool | When to use |
+|------|-------------|
+| **`plan_change`** *(v0.1.x)* | **Call before editing a symbol.** One-shot, token-light pre-edit briefing: overall risk + direct callers + ranked upstream blast radius + downstream deps. Metadata-only by default (`include_snippets=False`). |
+| `get_impact` | Full blast-radius table (Bidirectional PPR, `backward_weight=0.9`) with per-row HIGH/MEDIUM/LOW confidence tiers. |
+| `get_context` | 360° view of one symbol: direct callers + source code + downstream dependencies (with snippets). |
+| `get_pruned_context` | Broad downstream context across related symbols, with token budgeting. |
+| `get_callers` | Flat depth-1 list of upstream callers. |
+| `list_symbols` | Structural overview of the codebase (or a single file). |
+
+> Ambiguous names (e.g. a `validate` defined in two files) return a disambiguation prompt listing fully-qualified names instead of silently picking one — so blast-radius answers and benchmark seeds stay correct.
+
 ---
 
 ## 🏗 Architecture
