@@ -199,7 +199,25 @@ def parse_python_file(file_path, conn):
             if start_line is None: start_line = block_node.start_point[0]
             end_line = getattr(block_node.end_point, 'row', None)
             if end_line is None: end_line = block_node.end_point[0]
-            
+
+            # Deduplicate by FQN. Real code legitimately declares the same FQN more
+            # than once: `typing.@overload` stubs (the dominant case) plus
+            # property getter/setter pairs. Each extra declaration would otherwise
+            # create a phantom duplicate node and pollute the graph. We keep ONE
+            # node per FQN, preferring the definition with the largest body (the
+            # concrete implementation, not the `...` overload stub).
+            if name in symbol_map:
+                existing_id = symbol_map[name]
+                cursor.execute("SELECT start_line, end_line FROM symbols WHERE id = ?", (existing_id,))
+                prev = cursor.fetchone()
+                if prev and (end_line - start_line) > (prev[1] - prev[0]):
+                    cursor.execute(
+                        "UPDATE symbols SET kind = ?, start_line = ?, end_line = ? WHERE id = ?",
+                        (kind, start_line, end_line, existing_id)
+                    )
+                logging.info(f"  [=] Dedup: '{name}' already defined (overload/getter-setter), keeping largest body.")
+                continue
+
             cursor.execute(
                 "INSERT INTO symbols (file_id, name, short_name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)",
                 (file_id, name, short_name, kind, start_line, end_line)
@@ -216,8 +234,12 @@ def parse_python_file(file_path, conn):
             parent_name = find_enclosing_symbol(block_node, source_code, module_name)
             parent_id = symbol_map.get(parent_name)
             if parent_id and parent_id != symbol_id:
+                # OR IGNORE: real codebases legitimately repeat a short_name inside
+                # one scope (e.g. multiple decorator `wrapper` functions, property
+                # getter/setter pairs), which would otherwise trip the UNIQUE
+                # (source_id, target_name, edge_type) constraint and abort indexing.
                 cursor.execute(
-                    "INSERT INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
+                    "INSERT OR IGNORE INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
                     (parent_id, short_name, 'contains')
                 )
                 logging.info(f"  [->] Edge: '{parent_name}' contains {kind} '{name}'")

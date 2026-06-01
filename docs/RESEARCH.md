@@ -58,6 +58,15 @@ ablations are framed in the code-graph literature.
 
 ### 4.2 Results
 
+> ⚠️ **Status note (honesty):** the tables below are on the tool's own 38-node
+> `src/` graph and are **illustrative of the mechanism, not generalisable**.
+> Runs on real packages (`requests`, `click`) show that (a) full-closure
+> Recall@k is dominated by closure size on larger graphs and should not be
+> headlined, and (b) the durable signal is **precision** — `uni_directional`
+> degrades to 0.27–0.64 Precision@10 while `bi_directional` holds ~0.98. A
+> proper multi-repo write-up (precision-first, with a multi-hop-capable baseline)
+> will replace these toy numbers as the single source of truth. See README → RQ1.
+
 **Task: `blast_radius`** (relevant = transitive callers; `backward_weight = 0.9`)
 
 | Arm | Recall@3 | Recall@5 | Recall@10 |
