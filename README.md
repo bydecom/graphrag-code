@@ -29,6 +29,7 @@ graph TD
 - **Bidirectional PPR Merge (two query modes):** An engineering extension of the Repo Map concept. It runs Forward PPR (downstream dependencies) and Backward PPR (on the reversed graph) as two independent passes, then merges them with a tunable `backward_weight`. The default `0.2` leans toward downstream implementation context, while `get_impact` raises it to `0.9` to surface upstream callers (blast radius). It is therefore **two weight-selected modes**, not one symmetric "see everything" query.
 - **Source Code Block Extraction:** Injects exact code blocks (snippets) into the LLM context using AST coordinates rather than just spitting out symbol metadata.
 - **Interface Expansion (P0-2):** Traversing interface boundaries automatically via inheritance/dependency mapping (e.g., tracking consumers of implemented classes).
+- **Orphan / Dead-Code Detection:** Because edges are derived purely from real `import`, `call`, and `contains` relationships, modules and classes that nothing references stay disconnected from the main graph. A class that floats alone is the graph honestly telling you it is never imported or instantiated anywhere — a free static smell-detector for dead or dynamically-invoked code.
 - **Python-Native:** Highly optimized for the Python ecosystem (FastAPI, Django, Data Science).
 - **Zero-Ops MCP Server:** Complies with the Model Context Protocol (MCP). Plugs directly into **Cursor** or **Claude Desktop** in seconds.
 
@@ -70,6 +71,8 @@ The system utilizes `tree-sitter` to parse Python files into a graph of syntax n
 <p align="center">
   <img src="docs/assets/visualizer.png" alt="Codebase Knowledge Graph Visualizer" width="800"/>
 </p>
+
+> 💡 **Reading the graph:** Every symbol is attached to its file via `contains` edges, so each module forms a tight cluster of its classes and functions. If a whole cluster floats away from the rest (like an unused dialog), that is **intended** — it means nothing in the codebase statically imports or calls it. The graph surfaces orphan/dead code instead of hiding it behind fake links.
 
 **Color Legend (Node Types):**
 - 🟢 **Green (Ellipse):** `File / Module` (e.g., `main.py`)
