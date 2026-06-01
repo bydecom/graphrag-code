@@ -29,6 +29,7 @@ gantt
     2.  **Path & API Hardening:** Fix tree-sitter v0.23+ compatibility via `QueryCursor` and deploy **Dynamic Path Resolution** for stdio MCP sub-shells.
     3.  **Stdio Isolation:** Migrate all stdout `print()` logs inside the MCP Server and Core Engine to standard `logging` piped directly to `sys.stderr` to prevent JSON-RPC stream contamination.
     4.  **Academic Positioning:** Publish `docs/RESEARCH.md` detailing how Bidirectional Personalized PageRank merges both blast radius and implementation context within 90%+ token savings.
+    5.  **Agentic Pre-Edit Tooling:** Ship `plan_change` — a one-shot, metadata-first MCP briefing (risk + direct callers + ranked upstream/downstream PPR) that agents call before modifying a symbol, plus symbol disambiguation (fully-qualified-name prompts) to keep blast-radius answers and eval seeds correct.
 
 ### Phase 2: Usable Multi-Language OSS (v0.2.0) — *Est: Q3 2026*
 *   **Target Deliverables:**
