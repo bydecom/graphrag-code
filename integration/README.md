@@ -29,4 +29,4 @@ This directory contains integration configuration files and helper scripts to pl
 6. Test it out with a query:
    > *"Use the tool list_symbols to list functions in mcp_server.py"*
 
-Aider will dynamically register the exposed MCP tools (`list_symbols`, `get_callers`, `get_pruned_context`) and act as an intelligent coding assistant with precise, context-aware retrieval.
+Aider will dynamically register all exposed MCP tools — `list_symbols`, `get_callers`, `get_pruned_context`, `get_impact` (blast-radius ranking), and `get_context` (360° caller + source + dependency view) — and act as an intelligent coding assistant with precise, context-aware retrieval.
