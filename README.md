@@ -3,7 +3,7 @@
 
 *A directed-graph PPR engine that ranks structurally related code and extracts exact source blocks (not just metadata). A single tunable weight selects between two query modes: downstream dependency context and upstream blast-radius.*
 
-**Author:** [Bydecom](https://github.com/bydecom)
+**Author:** [Bydecom](https://github.com/bydecom) · [graphrag-code](https://github.com/bydecom/graphrag-code)
 
 ## Why GraphRAG-Code? (The "Why")
 
