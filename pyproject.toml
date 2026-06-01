@@ -35,7 +35,20 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "black",
-    "flake8"
+    "flake8",
+]
+research = [
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "pandas>=2.0",
+]
+benchmark = [
+    "litellm>=1.81.10",
+    "tiktoken>=0.7",
+    "rich>=13.0",
+]
+all = [
+    "graphrag-code-core[dev,research,benchmark]"
 ]
 
 [project.scripts]

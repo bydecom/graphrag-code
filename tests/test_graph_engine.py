@@ -7,7 +7,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 from graphrag_code.indexer import init_db
-from graphrag_code.graph_engine import GraphRAGCodeEngine
+from graphrag_code.graph_engine import GraphRAGCodeEngine, IMPACT_BACKWARD_WEIGHT
 
 class TestGraphEngine(unittest.TestCase):
     def setUp(self):
@@ -72,16 +72,23 @@ class TestGraphEngine(unittest.TestCase):
             engine.load_graph()
 
     def test_bidirectional_ppr(self):
-        """Test Personalized PageRank algorithm accuracy across bidirectional traversals"""
+        """Upstream caller surfaces in blast-radius mode (high backward_weight).
+
+        The engine runs two PPR passes merged by `backward_weight`, giving two query
+        modes rather than one symmetric query. A pure caller has ~zero forward score,
+        so it is damped at the default downstream-leaning weight and only surfaces
+        once we switch to the blast-radius weight. This test exercises that mode.
+        """
         engine = GraphRAGCodeEngine(self.db_path)
         engine.load_graph()
-        
-        # Running PPR around HelperUtils node
-        # Bidirectional setup must capture both dependencies (forward: IBaseInterface) and consumers (backward: Controller)
-        context = engine.get_context_ppr("HelperUtils", top_k=3)
+
+        # Blast-radius mode: high backward_weight surfaces the upstream consumer (Controller).
+        context = engine.get_context_ppr(
+            "HelperUtils", top_k=3, backward_weight=IMPACT_BACKWARD_WEIGHT
+        )
         names = [item["name"] for item in context]
-        
-        self.assertIn("Controller", names)        # Upstream Caller should be returned
+
+        self.assertIn("Controller", names)        # Upstream caller surfaces in blast-radius mode
         # Seed itself ("HelperUtils") and extended interface ("IBaseInterface") are in expanded_seeds,
         # so they are correctly excluded from the returned context to avoid redundancy (Issue 1)
         self.assertNotIn("HelperUtils", names)
