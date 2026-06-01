@@ -12,12 +12,6 @@ license = { text = "MIT" }
 authors = [
     { name = "Bydecom" }
 ]
-
-[project.urls]
-Homepage = "https://github.com/bydecom/graphrag-code"
-Repository = "https://github.com/bydecom/graphrag-code"
-Issues = "https://github.com/bydecom/graphrag-code/issues"
-
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -36,6 +30,11 @@ dependencies = [
     "litellm>=1.81.10",
     "python-dotenv>=1.2.2"
 ]
+
+[project.urls]
+Homepage = "https://github.com/bydecom/graphrag-code"
+Repository = "https://github.com/bydecom/graphrag-code"
+Issues = "https://github.com/bydecom/graphrag-code/issues"
 
 [project.optional-dependencies]
 dev = [
