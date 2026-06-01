@@ -14,7 +14,9 @@ authors = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bydecom"
+Homepage = "https://github.com/bydecom/graphrag-code"
+Repository = "https://github.com/bydecom/graphrag-code"
+Issues = "https://github.com/bydecom/graphrag-code/issues"
 
 classifiers = [
     "Development Status :: 3 - Alpha",
