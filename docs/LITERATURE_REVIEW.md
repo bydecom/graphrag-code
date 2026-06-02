@@ -1,7 +1,7 @@
 # 📚 Literature Review & Academic Debates — GraphRAG-Code
 
 > [!IMPORTANT]
-> This document synthesizes and critically analyzes 6 academic papers and industry implementations directly relevant to the GraphRAG-Code architecture. The goal is to evaluate structural choices, compile hard benchmark data, identify trade-offs, and map out concrete enhancements.
+> This document synthesizes and critically analyzes academic papers and industry implementations directly relevant to the GraphRAG-Code architecture. The goal is to evaluate structural choices, compile benchmark data from primary sources, identify trade-offs, and map concrete enhancements.
 
 ---
 
@@ -9,8 +9,8 @@
 
 | # | Paper / Documentation | Authors / Organization | Year | Relevance |
 |---|---|---|---|---|
-| 1 | *Codebase-Memory: Tree-Sitter-Based Knowledge Graphs for LLM Code Exploration via MCP* | Vogel et al., Charité Berlin | 2026 | ⭐⭐⭐⭐⭐ |
-| 2 | *Rethinking Memory as Continuously Evolving Connectivity (FluxMem)* | Fang et al., Zhejiang/Alibaba | 2026 | ⭐⭐⭐⭐ |
+| 1 | *Codebase-Memory: Tree-Sitter-Based Knowledge Graphs for LLM Code Exploration via MCP* | Vogel et al., [arXiv:2603.27277](https://arxiv.org/abs/2603.27277) (28 Mar 2026) | 2026 | ⭐⭐⭐⭐⭐ |
+| 2 | *Rethinking Memory as Continuously Evolving Connectivity (FluxMem)* | Fang et al., [arXiv:2605.28773](https://arxiv.org/abs/2605.28773) — **inspiration only** (agent memory, not code retrieval) | 2026 | 💡 INSPIRATION |
 | 3 | *Beyond Vector Similarity: Hierarchical Context-Aware Graph RAG* | Bhaumik et al., Google Cloud | 2026 | ⭐⭐⭐⭐⭐ |
 | 4 | *Reliable Graph-RAG for Codebases: AST-Derived Graphs vs LLM-Extracted Knowledge Graphs* | Chinthareddy, arXiv:2601.08773 | Jan 2026 | ⭐⭐⭐⭐⭐ |
 | 5 | *Practical Code RAG at Scale: Task-Aware Retrieval Design Choices under Compute Budgets* | Galimzyanov et al., JetBrains/NeurIPS 2025 | Oct 2025 | ⭐⭐⭐⭐⭐ |
@@ -26,7 +26,7 @@
 ### 2.0. Conceptual Inspiration: Bidirectional PPR (Lofgren et al., Stanford 2016) 💡
 
 > [!IMPORTANT]
-> **Honest attribution.** Lofgren et al.'s "Bidirectional PPR" is an *estimation algorithm*: it combines a forward push with a reverse random walk to **quickly approximate a single PPR value between two nodes** with provable error bounds, primarily to scale "Name Search" on massive social graphs (e.g., Twitter).
+> **Honest attribution.** Lofgren et al.'s "Bidirectional PPR" is an *estimation algorithm*: it combines a forward push with a reverse random walk to **quickly approximate a single PPR value between two nodes** with provable error bounds. The paper's motivating use case is **Facebook name search** — e.g., given a network like Facebook, a query like *"people named John"*, and a searching user, return the top nodes (Abstract & Introduction). **Twitter-2010** (~1.5B edges) is a **benchmark dataset** used to test scalability, not the application domain.
 >
 > **GraphRAG-Code does NOT implement that algorithm.** What we implement is different and simpler: we run **two independent, full Personalized PageRank passes** — one on the original graph and one on the reversed graph — and then **merge the two score vectors with a tunable weight**. We borrow only the *concept* of reasoning along both edge directions, not Lofgren's estimator or its theoretical guarantees.
 
@@ -41,32 +41,43 @@ So we cite Lofgren et al. as conceptual inspiration for bidirectional reasoning 
 
 ---
 
-### 2.1. Codebase-Memory (Vogel et al., 2026) 🔴 HIGHEST IMPORTANCE
+### 2.1. Codebase-Memory (Vogel et al., arXiv:2603.27277, 2026) 🔴 HIGHEST IMPORTANCE
 
-**Summary:** The research team from Charité Berlin built an architecture closely resembling ours: parsing 66 languages using Tree-sitter and exposing the resulting codebase knowledge graph via an MCP server. They evaluated the framework across 31 real-world repositories.
+**Authors & affiliations (from paper):**
+- **Martin Vogel** — Independent Researcher, Berlin
+- **Falk Meyer-Eschenbach** — Charité – Universitätsmedizin Berlin; Berlin Institute of Health (BIH); Humboldt University of Berlin
+- **Severin Kohler** — Freie Universität Berlin; University Hospital Heidelberg
+- **Elias Grünewald, Felix Balzer** — Charité – Universitätsmedizin Berlin
 
-**Empirical Benchmarks:**
+**Summary:** Tree-sitter knowledge graphs exposed via MCP, evaluated across **31 real-world repositories** and **66 languages**. Closest system parallel to GraphRAG-Code. Their graph agent uses **standard BFS / PageRank-style traversal**, not Personalized PageRank from a task-specific seed.
 
-| Metric | File Explorer Agent | Codebase-Memory (Graph) |
+**Empirical Benchmarks (MCP Graph Agent vs. File Explorer Agent):**
+
+| Metric | MCP (Graph) Agent | File Explorer Agent |
 |---|---|---|
-| **Answer Quality** | **92%** | 83% |
-| **Token Consumption** | Baseline 1x | **10x Less** |
-| **Tool Calls** | Baseline 1x | **2.1x Less** |
-| **Hub Detection** | Inferior | **Superior/Equal on 19/31 repos** |
+| **Answer quality score** | 0.83 | **0.92** |
+| **Tool calls / question** | **2.3** | 4.8 |
+| **Tokens / question** | **~1,000** | ~10,000 |
+| **Query latency** | **<1 ms** | 10–30 s |
+
+**Graph-native queries (important nuance):** For tasks such as **hub detection** and **caller ranking**, the graph agent *"matches or exceeds"* the explorer on **19 of 31 languages** — graph retrieval is **not uniformly worse**; it wins on structural query types even when overall quality score is lower.
 
 **⚡ Key Architectural Debates:**
 
 > [!WARNING]
-> **THE ACCURACY GAP**: The Graph-based system achieved **83% quality** compared to the brute-force File Explorer's **92%**. This implies that **Graph-RAG is not always superior to brute-force file dumping in terms of pure correctness!** However, it offers a monumental 10x token saving.
+> **THE ACCURACY GAP (aggregate):** Overall answer quality is **83% vs 92%** for the explorer. Graph-RAG trades a modest correctness gap for ~10× token savings and sub-millisecond query latency. Structural sub-tasks (hub/caller) are a different story — see 19/31 above.
+
+**Gap vs. GraphRAG-Code — call resolution:** Codebase-Memory implements a **6-strategy call-resolution cascade** with confidence scores (0.95 → 0.30), including LSP-style type resolution for Go/C/C++. GraphRAG-Code currently uses **short_name matching** plus import heuristics. We may miss cross-file calls that their cascade resolves. See RESEARCH §3 *Threats to Validity*.
 
 **Critical Questions for GraphRAG-Code:**
-1. We are trading off a minor degree of **accuracy** for a massive gain in **efficiency**. What is our target tolerance threshold for accuracy loss?
-2. Vogel et al. utilize "parallel worker pools" and "call-graph traversal" which we currently execute sequentially.
-3. "Community discovery" (grouping modular code clusters) is a major feature GraphRAG-Code v0.1 lacks.
+1. What is our tolerance for the 83% vs 92% aggregate gap vs. token/latency wins?
+2. Vogel et al. use parallel worker pools; we index sequentially.
+3. Community discovery (Louvain-style module grouping) is a feature we lack in v0.1.
 
 **💡 Actionable Improvements:**
-*   Establish empirical correctness benchmarks: Measure the accuracy of PPR context extraction against raw whole-file context dumps.
-*   Implement community detection (e.g., Louvain or Label Propagation via `rustworkx`) to bridge the 83% -> 92% quality gap.
+*   Measure PPR context vs. whole-file dumps on our own benchmark (not assume graph always wins).
+*   Louvain / label propagation for module clusters (roadmap v0.5).
+*   Long-term: multi-strategy call resolution (Phase 2+ / LSIF).
 
 ---
 
@@ -121,8 +132,8 @@ So we cite Lofgren et al. as conceptual inspiration for bidirectional reasoning 
 >
 > **The Lesson:** Over-contextualization is harmful. Higher `top_k` limits are not always better.
 
-**⚡ CodeBLEU Debunked:**
-CodeBLEU remained at 91% for both architectures despite the 40 percentage point difference in API hallucinations. This proves **CodeBLEU is a useless metric** for code generation quality. GraphRAG-Code must adopt Google's custom structural evaluation approach.
+**⚡ CodeBLEU caveat:**
+CodeBLEU remained at 91% for both architectures despite the 40 percentage point difference in API hallucinations. This shows **CodeBLEU is insufficient on its own** for repository-scale structural quality. GraphRAG-Code should pair lexical metrics with structural measures such as DRQ, hallucination rate, and parent-child consistency.
 
 **💡 Actionable Improvements:**
 *   Implement "Context Density Control": If `top_k` returns code blocks exceeding $X$ tokens, automatically strip function bodies and return only signatures.
@@ -135,7 +146,7 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 **Summary:** This paper compares 3 paradigms across 3 large Java repositories (Shopizer, ThingsBoard, OpenMRS Core) with 15 architectural tracing questions per repo (45 total):
 *   **(A) No-Graph Naive RAG**: Vector-only top-k chunk retrieval.
 *   **(B) LLM-KB**: LLM generates the dependency graph at index-time.
-*   **(C) DKB (Deterministic Knowledge Base)**: Tree-sitter AST extraction with bidirectional graph traversal (**identical to our approach**).
+*   **(C) DKB (Deterministic Knowledge Base)**: Tree-sitter AST extraction with bidirectional graph traversal. It validates the same directional insight as GraphRAG-Code, though DKB uses fixed-depth BFS over Java type graphs while GraphRAG-Code uses PPR over Python symbol graphs.
 
 **🏆 Correctness Benchmarks (45 questions, 3 repos):**
 
@@ -145,7 +156,18 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 | LLM-KB | 38 | 5 | 2 | 84.4% |
 | No-Graph (Vector-only) | 31 | 9 | 5 | 68.9% |
 
-**Shopizer Sub-test (15 questions):** DKB **15/15** ✅ | LLM-KB 13/15 | No-Graph 6/15
+**Per-repository breakdown (15 questions each):**
+
+| Repository | DKB (Ours-class) | LLM-KB | No-Graph |
+|---|---|---|---|
+| **Shopizer** | **15/15** | 13/15 | 6/15 |
+| **ThingsBoard** | **14/15** | 12/15 | **14/15** |
+| **OpenMRS Core** | **14/15** | 13/15 | 11/15 |
+
+> [!CAUTION]
+> **WORKLOAD-DEPENDENT, NOT UNIVERSAL:** On **ThingsBoard**, DKB **ties** the vector-only baseline (14/15 vs 14/15). The paper (§9.8) states gains are largest on suites emphasizing multi-hop architectural tracing and upstream discovery; on some repos the No-Graph baseline is already strong. **Claiming "DKB always beats No-Graph" is incorrect** — it is repository- and question-type-dependent.
+
+**Shopizer highlight:** DKB **15/15** vs LLM-KB 13/15 vs No-Graph 6/15 — largest graph advantage.
 
 **💰 Run-time Cost Analysis (Normalized, No-Graph = 1.0):**
 
@@ -155,7 +177,7 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 | OpenMRS + ThingsBoard (30 Qs) | $0.149 / 1.0× | $0.317 / **2.13×** | $6.80 / **45.64×** |
 
 > [!CAUTION]
-> **LLM-INDEXED KNOWLEDGE BASES ARE HIGH-RISK**: Indexing costs soar by 45x on larger codebases. More importantly, LLMs silently skipped **37.7% of files** during indexing (377/1210 files missed on Shopizer). This creates severe, unpredictable blind spots at query time. AST-derived DKBs guarantee 100% file coverage.
+> **LLM-INDEXED KNOWLEDGE BASES ARE HIGH-RISK**: Indexing costs soar by 45x on larger codebases. More importantly, LLMs silently skipped **37.7% of files** during indexing (377/1210 files missed on Shopizer). This creates severe, unpredictable blind spots at query time. AST-derived DKBs avoid probabilistic file skipping, though implementation details can still affect chunk coverage and symbol mapping.
 
 **⚡ Indexing Speed (Shopizer):**
 *   No-Graph: 18.41s
@@ -163,14 +185,14 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 *   LLM-KB: **215.09s** (10x slower than DKB)
 
 **🔑 Key Technical Insights for GraphRAG-Code:**
-1.  **Bidirectional traversal is mandatory.** Unidirectional successor traversal completely misses callers.
-2.  **Interface-consumer expansion is vital.** When class $C$ implements interface $I$, we must fetch all users of $I$ to bridge polymorphic boundaries. This is why DKB scored 15/15 while LLM-KB fell to 13/15.
-3.  **LLM-KB suffers from a 27% node deficit** (842 nodes vs 1158 nodes in DKB).
+1.  **Bidirectional traversal is mandatory.** Unidirectional successor traversal misses callers. The paper's Algorithm 1 uses *"Bidirectional expansion: for each retrieved class v, include both **successors** (downstream dependencies) and **predecessors** (upstream consumers)"* plus **interface-consumer expansion** when a class implements an interface. DKB uses **BFS** with fixed depth; GraphRAG-Code uses **PPR** with tunable merge weights — same directional insight, different ranking mechanism. This is **independent validation** of our backward-pass design.
+2.  **Interface-consumer expansion is vital.** When class $C$ implements interface $I$, fetch all users of $I$ to bridge polymorphism (we implement this in `_get_expanded_seeds`).
+3.  **LLM-KB suffers from a 27% node deficit** (842 nodes vs 1158 nodes in DKB on Shopizer).
 
 **⚡ PPR vs. Bidirectional BFS Debate:**
 
 > [!NOTE]
-> DKB implements **BFS bidirectional traversal with fixed depth limits** (successors + predecessors). GraphRAG-Code utilizes **Personalized PageRank (PPR)**. PPR dynamically scores relevance globally based on link structure rather than flat BFS limits. However, DKB's explicit **interface-consumer expansion** is exceptionally robust. Hybridizing PPR with interface-consumer expansion represents the state-of-the-art.
+> DKB implements **BFS bidirectional traversal with fixed depth limits** (successors + predecessors). GraphRAG-Code utilizes **Personalized PageRank (PPR)**. PPR dynamically scores relevance globally based on link structure rather than flat BFS limits. However, DKB's explicit **interface-consumer expansion** is exceptionally robust. A practical next step is to combine PPR ranking with deterministic interface-consumer expansion and evaluate that hybrid directly.
 
 ---
 
@@ -214,7 +236,20 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 >
 > **Insight #4: Simple line-splitting matches syntax-aware chunking** in retrieval performance. Avoid over-engineering complex syntax-based line splitting algorithms.
 >
-> **Insight #5: Prepend Graph context, then backfill with BM25** to achieve optimal retrieval efficiency.
+> **Insight #5:** Prepend Graph context, then backfill with BM25 to achieve optimal retrieval efficiency.
+
+---
+
+### 2.6. FluxMem (Fang et al., arXiv:2605.28773, 2026) 💡 INSPIRATION ONLY
+
+> [!NOTE]
+> **Not code-graph evidence.** FluxMem is an **agent memory framework** (continuously evolving connectivity between memory nodes). It does **not** benchmark code retrieval, AST graphs, or MCP codebase exploration. Cite it as **design inspiration** for future adaptive edge weights — **not** as empirical support for GraphRAG-Code's structural retrieval performance.
+
+**Summary:** Proposes *Memory-as-Connectivity* — memory as an evolving topology rather than static chunks, with self-repairing connectivity and benchmarks on agent tasks (LoCoMo, Mind2Web, GAIA).
+
+**Relevance to GraphRAG-Code (roadmap only):**
+*   **Phase 3+ idea:** Adjust PPR edge weights from agent session feedback (which paths led to successful edits) — *inspired by* FluxMem's connectivity evolution, applied only to **weights**, not to AST facts (the graph structure stays deterministic).
+*   **Do not claim:** "FluxMem proves our code graph works" — it addresses a different problem (long-horizon agent memory).
 
 ---
 
@@ -222,16 +257,16 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 
 ### 3.1. Industry Consensus (Validates GraphRAG-Code)
 
-*   **AST-based parsing** is the only reliable way to map complex codebase hierarchies (Vogel, Google Cloud, Reliable Graph-RAG).
+*   **AST-based parsing** is the most reliable low-cost backbone for mapping complex codebase hierarchies in the cited systems (Vogel, Google Cloud, Reliable Graph-RAG).
 *   **Graph RAG reduces API hallucinations** by up to 40% compared to vector search (Google Cloud).
-*   **Personalized PageRank** delivers structural, multi-hop context far more efficiently than vector embeddings (Aider, Vogel).
+*   **Graph traversal and ranking** deliver structural, multi-hop context more efficiently than pure vector embeddings for architectural queries; GraphRAG-Code's differentiator is making that ranking **Personalized** to the seed symbol.
 *   **MCP** is the correct protocol standard for AI Agent tool integration.
 
 ### 3.2. Ongoing Scientific Debates
 
 | Debate Point | Pro-Graph Side | Counter-Argument / Baseline |
 |---|---|---|
-| **Are graphs always more accurate?** | DKB achieves 95.6% correctness (Reliable RAG). | Vogel et al. show Graph (83%) < File Explorer (92%). |
+| **Are graphs always more accurate?** | DKB 95.6% aggregate (Reliable RAG); graph wins big on Shopizer (15/15 vs 6/15). | Vogel: aggregate 83% vs 92% explorer; **but** graph matches/exceeds on hub/caller tasks on **19/31** langs. ThingsBoard: DKB **ties** No-Graph (14/15). |
 | **PPR vs. Bidirectional BFS** | PPR naturally ranks dynamic mathematical relevance. | BFS enforces clear, guaranteed interface-boundary expansion. |
 | **Does graph context over-engineer?** | Structural RAG eliminates invalid calls. | Google HCRG shows it triggers highly defensive complexity. |
 | **BM25 vs. Dense vs. Graph** | Graph-RAG rules complex multi-hop. | JetBrains shows BM25 is 200x faster for basic completions. |
@@ -240,11 +275,11 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 
 ## 4. GraphRAG-Code Competitive Positioning
 
-| Feature | Codebase-Memory (Berlin) | Aider RepoMap | GraphRAG-Code (Ours) |
+| Feature | Codebase-Memory (Vogel et al.) | Aider RepoMap | GraphRAG-Code (Ours) |
 |---|---|---|---|
 | **Multi-Language** | 66 Languages | 20+ Languages | 1 Language (Python) |
-| **PPR Personalization** | ❌ Standard PageRank | ❌ Standard PageRank | ✅ **Personalized PageRank** |
+| **Traversal / Ranking** | Standard BFS / PageRank | Standard PageRank | ✅ **Personalized PageRank** (seeded) |
+| **Call Resolution** | ✅ 6-strategy cascade (0.95→0.30) | ❌ Tag-based | ⚠️ short_name + import heuristics |
 | **Source Extraction** | ❌ Metadata-only | ❌ Filenames/Tags only | ✅ **Full Code Snippets** |
 | **Interface Expansion** | ❌ No | ❌ No | ✅ **Dynamic Seeds (extends)** |
 | **Persistence** | SQLite | ❌ None | ✅ **Incremental SQLite** |
-```
