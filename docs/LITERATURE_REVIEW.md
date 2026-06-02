@@ -10,7 +10,7 @@
 | # | Paper / Documentation | Authors / Organization | Year | Relevance |
 |---|---|---|---|---|
 | 1 | *Codebase-Memory: Tree-Sitter-Based Knowledge Graphs for LLM Code Exploration via MCP* | Vogel et al., [arXiv:2603.27277](https://arxiv.org/abs/2603.27277) (28 Mar 2026) | 2026 | ⭐⭐⭐⭐⭐ |
-| 2 | *Rethinking Memory as Continuously Evolving Connectivity (FluxMem)* | Fang et al., [arXiv:2605.28773](https://arxiv.org/abs/2605.28773) — **inspiration only** (agent memory, not code retrieval) | 2026 | 💡 INSPIRATION |
+| 2 | *Rethinking Memory as Continuously Evolving Connectivity (FluxMem)* | Fang et al., [arXiv:2605.28773](https://arxiv.org/abs/2605.28773) — **inspiration only** (*not code-graph evidence*) | 2026 | 💡 INSPIRATION |
 | 3 | *Beyond Vector Similarity: Hierarchical Context-Aware Graph RAG* | Bhaumik et al., Google Cloud | 2026 | ⭐⭐⭐⭐⭐ |
 | 4 | *Reliable Graph-RAG for Codebases: AST-Derived Graphs vs LLM-Extracted Knowledge Graphs* | Chinthareddy, arXiv:2601.08773 | Jan 2026 | ⭐⭐⭐⭐⭐ |
 | 5 | *Practical Code RAG at Scale: Task-Aware Retrieval Design Choices under Compute Budgets* | Galimzyanov et al., JetBrains/NeurIPS 2025 | Oct 2025 | ⭐⭐⭐⭐⭐ |
@@ -102,10 +102,10 @@ So we cite Lofgren et al. as conceptual inspiration for bidirectional reasoning 
 
 **Areas where Aider excels:**
 *   Aider includes **function signatures** (names + parameter structures) in its context instead of just raw function bodies.
-*   Aider implements a heuristic to prioritize **files active in the editor** ("active file boost").
+*   Aider benefits from **editor-provided context** in practice (e.g., focusing on what you're currently working on). However, the cited RepoMap PageRank article does **not** document an explicit "active file boost" heuristic.
 
 **💡 Actionable Improvements:**
-*   Add "Active File Boost": If the user is editing `bay_menu.py`, scale the personalization vector for all nodes inside that file path by x2.
+*   (Optional) Add an "Active File Boost" policy: if the user is editing `bay_menu.py`, scale the personalization vector for all nodes inside that file path by x2.
 *   Incorporate function signatures into symbol node database metadata.
 
 ---
@@ -177,7 +177,7 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 | OpenMRS + ThingsBoard (30 Qs) | $0.149 / 1.0× | $0.317 / **2.13×** | $6.80 / **45.64×** |
 
 > [!CAUTION]
-> **LLM-INDEXED KNOWLEDGE BASES ARE HIGH-RISK**: Indexing costs soar by 45x on larger codebases. More importantly, LLMs silently skipped **37.7% of files** during indexing (377/1210 files missed on Shopizer). This creates severe, unpredictable blind spots at query time. AST-derived DKBs avoid probabilistic file skipping, though implementation details can still affect chunk coverage and symbol mapping.
+> **LLM-INDEXED KNOWLEDGE BASES ARE HIGH-RISK**: Indexing costs soar by 45x on larger codebases. More importantly, LLMs silently skipped **31.2% of files** during indexing (377/1210 files missed on Shopizer). This creates severe, unpredictable blind spots at query time. AST-derived DKBs avoid probabilistic file skipping, though implementation details can still affect chunk coverage and symbol mapping.
 
 **⚡ Indexing Speed (Shopizer):**
 *   No-Graph: 18.41s
@@ -192,7 +192,7 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 **⚡ PPR vs. Bidirectional BFS Debate:**
 
 > [!NOTE]
-> DKB implements **BFS bidirectional traversal with fixed depth limits** (successors + predecessors). GraphRAG-Code utilizes **Personalized PageRank (PPR)**. PPR dynamically scores relevance globally based on link structure rather than flat BFS limits. However, DKB's explicit **interface-consumer expansion** is exceptionally robust. A practical next step is to combine PPR ranking with deterministic interface-consumer expansion and evaluate that hybrid directly.
+> DKB implements **BFS bidirectional traversal with fixed depth limits** (successors + predecessors). GraphRAG-Code utilizes **Personalized PageRank (PPR)**. PPR dynamically scores relevance globally based on link structure rather than flat BFS limits. However, DKB's explicit **interface-consumer expansion** is exceptionally robust — and we already implement a related hybrid by expanding seeds across interface boundaries (`_get_expanded_seeds`) while using PPR for ranking. A practical next step is to evaluate this hybrid explicitly against a pure-PPR baseline.
 
 ---
 
@@ -225,7 +225,7 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 **⚡ 5 Actionable Insights for GraphRAG-Code:**
 
 > [!IMPORTANT]
-> **Insight #1: Task-dependent retrieval is mandatory.** No single configuration works for all tasks. PL→PL requires syntax-dense local context (BM25/IoU). NL→PL requires dense embedding retrieval. Graph/PPR excels at structural multi-hop tracing.
+> **Insight #1: Task-dependent retrieval is mandatory.** No single configuration works for all tasks. PL→PL requires syntax-dense local context (BM25/IoU). NL→PL requires dense embedding retrieval. **Graph-based structural multi-hop tracing is not evaluated in this JetBrains paper**; we treat it as a separate task class and evaluate it in RQ1 (`docs/RESEARCH.md` §4), with independent support from Chinthareddy (2026).
 >
 > **Insight #2: BPE splitting is an anti-pattern.** It is 10x slower than word-splitting with zero accuracy gain.
 >
@@ -253,6 +253,16 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 
 ---
 
+### 2.7. Recent Graph-Based Systems for Repository-Scale Tasks (2024–2025)
+
+GraphRAG-Code targets **structural context retrieval** during live coding sessions: given a seed symbol, retrieve upstream callers (blast radius) and downstream dependencies with **bidirectional Personalized PageRank (PPR)** and exact source snippets, exposed via MCP with minimal operational overhead (SQLite).
+
+This differs from several recent graph-based systems that focus on **localization**, **graph-database query interfaces**, or **plug-in improvements** for SWE-bench-style issue resolution:
+
+*   **LocAgent** (Chen et al., ACL 2025; arXiv:2503.09089): Parses repositories into **directed heterogeneous graphs** and provides unified retrieval tools (search + typed BFS traversal) for **code localization**. Reports up to **92.7% file-level Acc@5** using Qwen2.5-32B(ft), with ~86% cost reduction relative to proprietary baselines, and +12% Pass@10 gains on downstream issue resolution in its setting.
+*   **CodexGraph** (Liu et al., NAACL 2025; arXiv:2408.03910): Builds a **code graph database** (Neo4j) and relies on LLM-written **Cypher queries** to retrieve precise structure-aware context; evaluated on CrossCodeEval, SWE-bench, and EvoCodeBench.
+*   **RepoGraph** (Ouyang et al., ICLR 2025; arXiv:2410.14684): A **plug-in module** that constructs a repository-level graph and retrieves local ego-graphs to augment existing frameworks (e.g., Agentless, SWE-agent), reporting consistent SWE-bench improvements.
+
 ## 3. Consensus & Debate Matrix
 
 ### 3.1. Industry Consensus (Validates GraphRAG-Code)
@@ -275,11 +285,11 @@ CodeBLEU remained at 91% for both architectures despite the 40 percentage point 
 
 ## 4. GraphRAG-Code Competitive Positioning
 
-| Feature | Codebase-Memory (Vogel et al.) | Aider RepoMap | GraphRAG-Code (Ours) |
-|---|---|---|---|
-| **Multi-Language** | 66 Languages | 20+ Languages | 1 Language (Python) |
-| **Traversal / Ranking** | Standard BFS / PageRank | Standard PageRank | ✅ **Personalized PageRank** (seeded) |
-| **Call Resolution** | ✅ 6-strategy cascade (0.95→0.30) | ❌ Tag-based | ⚠️ short_name + import heuristics |
-| **Source Extraction** | ❌ Metadata-only | ❌ Filenames/Tags only | ✅ **Full Code Snippets** |
-| **Interface Expansion** | ❌ No | ❌ No | ✅ **Dynamic Seeds (extends)** |
-| **Persistence** | SQLite | ❌ None | ✅ **Incremental SQLite** |
+| Feature | Codebase-Memory (Vogel et al.) | Aider RepoMap | LocAgent (ACL 2025) | CodexGraph (NAACL 2025) | RepoGraph (ICLR 2025) | GraphRAG-Code (Ours) |
+|---|---|---|---|---|---|---|
+| **Primary Goal** | Repo exploration via MCP | Token-light repo map | Code localization | Repo-scale navigation via graph DB queries | Plug-in boost for AI-SE frameworks | Structural context retrieval (blast radius + deps) |
+| **Language Focus** | 66 languages (Tree-sitter) | Multi-language repo map | Python repositories (Loc-Bench, SWE-bench variants) | Python repositories (graph DB schema) | Python SWE-bench-Lite | Python (native) |
+| **Traversal / Ranking** | Standard BFS / PageRank | Standard PageRank | Typed BFS traversal + search tools | Cypher queries over a graph DB | Ego-graph retrieval over repo graph | ✅ **Bidirectional Personalized PageRank** (two passes merged by `backward_weight`) |
+| **Source Extraction** | ✅ Snippet retrieval (`get_code_snippet`) | ⚠️ Tags/paths; requires separate reads | ✅ Entity code snippets / retrieval | ✅ Code fragments via DB lookup | ✅ Def/ref relations + context flattening | ✅ **Exact source snippets** via AST coordinates |
+| **Operational Overhead** | Low (MCP + SQLite) | Low | Medium (indexing + tool harness) | High (graph DB infra) | Medium (integration + caching) | Low (SQLite + MCP stdio) |
+| **Persistence** | SQLite | ❌ None | Cached indexes optional | Graph database | Cached graphs for SWE-bench | ✅ Incremental SQLite |

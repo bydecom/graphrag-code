@@ -18,14 +18,9 @@ graph TD
     MCP -->|"stdio Protocol"| Client[Cursor Agent]
 ```
 
-## 📊 Benchmark (Small test codebase, 3 test cases — early/indicative only)
+## 📊 Benchmark Status (honest)
 
-| Test Case               | Token Savings              | Latency           | Accuracy vs Full-file Baseline |
-|-------------------------|----------------------------|-------------------|--------------------------------|
-| Architecture Q&A (TC01) | ~89%                       | faster            | Equal or better                |
-| Blast Radius (TC02)     | 97.3% (50,055 → 1,334 tok) | ↓54.6% (6.69→3.04s) | 0.43 vs 0.57 — needs tuning\* |
-
-*\*These are early numbers on a single small codebase (3 test cases) and are **not** a rigorous evaluation. On Blast Radius, accuracy currently drops because aggressive pruning can cut loosely-coupled indirect dependencies; PPR seed resolution for private methods (beginning with `_`) is still being tuned. The full evaluation plan (≥10 repos, 3 baselines, structural metrics) lives in [`docs/RESEARCH.md`](docs/RESEARCH.md), which is the single source of truth for all numbers.*
+Older, small-codebase numbers are **not** used as headline evidence anymore. The current, reproducible benchmark story is **RQ1** below (LLM-free structural retrieval), with full methodology + threats-to-validity in [`docs/RESEARCH.md`](docs/RESEARCH.md).
 
 ### 🧪 RQ1 — Structural Retrieval (deterministic, no LLM)
 
@@ -125,6 +120,9 @@ Work directly relevant to this problem:
 
 | Reference | Relevance to GraphRAG-Code |
 |-----------|----------------------------|
+| [LocAgent](https://arxiv.org/abs/2503.09089) (Chen et al., ACL 2025) | Graph-guided **code localization** (where to edit) using directed heterogeneous graphs. Reports up to **92.7% file-level Acc@5** (Qwen2.5-32B-ft) with ~86% cost reduction. |
+| [CodexGraph](https://arxiv.org/abs/2408.03910) (Liu et al., NAACL 2025) | Graph database (Neo4j) + Cypher queries as the interface between agents and repositories; evaluated on CrossCodeEval, SWE-bench, and EvoCodeBench. |
+| [RepoGraph](https://arxiv.org/abs/2410.14684) (Ouyang et al., ICLR 2025) | Plug-in repository-level code graph module that boosts SWE-bench performance when integrated into existing frameworks (e.g., Agentless, SWE-agent). |
 | [Aider Repo Map](https://aider.chat/docs/repomap.html) (Gauthier, 2024) | Tree-sitter + PageRank for repo context; we use **directed** graphs, **Personalized** PageRank from a seed symbol, and MCP-delivered **source blocks**. |
 | [Codebase-Memory](https://arxiv.org/abs/2603.27277) (Vogel et al., 2026) | Tree-sitter knowledge graph + **MCP**; closest parallel. Aggregate quality 0.83 vs explorer 0.92, but graph wins hub/caller tasks on **19/31** langs. We add **Personalized** PPR and snippet extraction; they add **6-strategy call resolution**. |
 | [Reliable Graph-RAG for Codebases](https://arxiv.org/abs/2601.08773) (Chinthareddy, 2026) | AST-derived DKB vs LLM-KB vs No-Graph on Java repos (Shopizer, ThingsBoard, OpenMRS). **95.6% aggregate** for DKB, but **ties** No-Graph on ThingsBoard; validates bidirectional + interface expansion. |
