@@ -13,7 +13,10 @@ This document serves as the academic positioning and a critical evaluation of th
 In the current landscape of Agentic Graph-RAG (2025-2026), GraphRAG-Code is positioned as an **engineering extension** of two prominent research lines:
 
 1. **Aider's Repo Map (2024):** Aider uses standard PageRank over a Tree-Sitter AST graph. However, standard PageRank measures *global popularity* (e.g., a utility function will always score high), which may not capture task-specific relevance. GraphRAG-Code applies **Personalized PageRank (PPR)** where energy propagates outwards from the *active seed node*, ranking files based on relevance to the specific task rather than global popularity.
-2. **Reliable Graph-RAG (2026):** Recent studies show AST-derived graphs (Deterministic Knowledge Bases) outperforming LLM-extracted knowledge graphs in accuracy and cost. GraphRAG-Code aligns with this finding and implements a **Bidirectional Traversal Merge**: two independent Personalized PageRank passes — Forward PPR on the graph (downstream dependencies) and Backward PPR on a reversed graph (upstream callers/impact) — combined with a tunable `backward_weight`. Note this is *not* Lofgren et al.'s (2016) bidirectional PPR *estimator*; we borrow only the concept of reasoning along both edge directions. Because a pure caller has near-zero forward score, the weight selects between two practical modes rather than producing one symmetric query: a low weight (default `0.2`) favours downstream implementation context, while a high weight (`0.9`, used by `get_impact`) surfaces upstream blast radius.
+2. **Reliable Graph-RAG (Chinthareddy, [arXiv:2601.08773](https://arxiv.org/abs/2601.08773), Jan 2026):** AST-derived Deterministic Knowledge Bases (DKB) outperform LLM-built graphs on aggregate architectural tracing (43/45 correct vs 38/45 LLM-KB vs 31/45 No-Graph), but gains are **workload-dependent** — on ThingsBoard, DKB **ties** the vector baseline (14/15 each). The paper's bidirectional expansion (successors + predecessors, plus interface-consumer expansion) independently validates our backward-pass design; we implement the same directional insight via **PPR merge** rather than fixed-depth BFS.
+3. **Codebase-Memory (Vogel et al., [arXiv:2603.27277](https://arxiv.org/abs/2603.27277), Mar 2026):** Closest MCP + Tree-sitter parallel. Aggregate answer quality favors the file explorer (0.92 vs 0.83), but the graph agent wins on **hub detection / caller ranking** on 19/31 languages and uses ~10× fewer tokens. They use standard BFS/PageRank; we add **Personalized** PPR and source snippets.
+
+GraphRAG-Code also runs **two independent Personalized PageRank passes** — Forward PPR on the graph (downstream dependencies) and Backward PPR on a reversed graph (upstream callers/impact) — merged with a tunable `backward_weight`. This is *not* Lofgren et al.'s (2016) bidirectional PPR *estimator* (whose motivating use case is **Facebook name search**, benchmarked on the Twitter-2010 graph); we borrow only the concept of reasoning along both edge directions. Because a pure caller has near-zero forward score, the weight selects between two practical modes: default `0.2` favours downstream context; `0.9` (`get_impact`) surfaces blast radius.
 
 *Positioning Statement:* GraphRAG-Code extends the Aider RepoMap and Codebase-Memory paradigms by merging two directional Personalized PageRank passes into weight-selectable query modes, extracting exact source code blocks in $O(1)$ disk I/O, and exposing the graph to IDE agents via standard Model Context Protocol (MCP) tools.
 
@@ -22,9 +25,11 @@ In the current landscape of Agentic Graph-RAG (2025-2026), GraphRAG-Code is posi
 To transition from a "solid engineering prototype" to a novel academic contribution, several limitations must be acknowledged and addressed in future iterations:
 
 - **Syntax vs. Semantics:** Tree-sitter provides syntax-level parsing. Without deep static analysis (like LSIF or SCIP), relationships such as `obj.method()` cannot be deterministically resolved if `obj`'s type is unknown. Decorators, metaclasses, and dynamic imports represent blind spots in the graph.
-- **Accuracy vs. Efficiency Trade-off:** While the graph approach saves ~90% token consumption compared to brute-force file reading, studies (like Codebase-Memory) suggest that Graph-based extraction can sometimes lower overall answer accuracy (e.g., 83% vs 92%). GraphRAG-Code has not yet run rigorous evaluations on when this accuracy drop occurs.
+- **Call resolution gap (vs. Codebase-Memory):** Vogel et al. use a **6-strategy call-resolution cascade** with confidence scores (0.95→0.30), including LSP-style resolution for Go/C/C++. GraphRAG-Code uses **short_name matching** plus import heuristics. Cross-file calls that lack a resolvable import may be missed or ambiguous.
+- **Accuracy vs. Efficiency Trade-off:** Codebase-Memory reports aggregate answer quality **0.83 (graph) vs 0.92 (file explorer)**, with ~10× token savings — but graph **matches or exceeds** the explorer on hub/caller tasks on **19/31 languages**. Chinthareddy (2026) shows DKB at **95.6% aggregate** yet **ties** No-Graph on ThingsBoard (14/15). Graph-RAG is not uniformly superior; GraphRAG-Code must measure its own trade-off on structural tasks.
 - **Hyperparameter Dependency:** The `backward_weight` parameter (default 0.2) is a heuristic. A sweep is provided in [`ablation_runner.py`](../ablation_runner.py), and §4 shows the two endpoint weights (0.9 / 0.3) behave as intended on retrieval; a fuller optimal-balance study across repos is still pending.
 - **Need for Hybrid Search:** Graph RAG dominates structural queries, but BM25 or Dense Vector search is still superior for simple PL$\rightarrow$PL code completion tasks. A future intent router is required.
+- **FluxMem (inspiration only):** [arXiv:2605.28773](https://arxiv.org/abs/2605.28773) motivates *adaptive edge weights* from agent feedback in future phases — it does **not** benchmark code-graph retrieval and must not be cited as performance evidence.
 
 ## 4. RQ1 — Structural Retrieval Quality (Deterministic, LLM-free)
 
@@ -108,6 +113,12 @@ ablations are framed in the code-graph literature.
   variant is a planned refinement.
 - **Pending baseline:** BM25 / lexical chunking, to bound where lexical retrieval
   beats structural (motivating the future intent router).
+- **Call resolution gap:** Same caveat as §3 — short_name matching may under-count
+  edges that Codebase-Memory's 6-strategy cascade would resolve; precision/recall
+  on real repos may improve once call resolution hardens.
+- **External literature caveat:** Chinthareddy (2026) shows DKB **ties** No-Graph on
+  ThingsBoard (14/15). Graph advantages are **workload-dependent**; our RQ1 harness
+  measures structural retrieval only, not end-to-end LLM answer quality.
 
 ## 5. Evaluation Roadmap (Future Work)
 

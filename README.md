@@ -126,8 +126,8 @@ Work directly relevant to this problem:
 | Reference | Relevance to GraphRAG-Code |
 |-----------|----------------------------|
 | [Aider Repo Map](https://aider.chat/docs/repomap.html) (Gauthier, 2024) | Tree-sitter + PageRank for repo context; we use **directed** graphs, **Personalized** PageRank from a seed symbol, and MCP-delivered **source blocks**. |
-| *Codebase-Memory* (Vogel et al., 2026) | Tree-sitter knowledge graph + **MCP** for code exploration; closest system parallel. We add PPR-based ranking with intent-specific merge weights and snippet extraction. |
-| [Reliable Graph-RAG for Codebases](https://arxiv.org/abs/2601.08773) (Chinthareddy, 2026) | AST-derived graphs vs LLM-built graphs on **repository** structural tracing; supports deterministic AST indexing for multi-hop code queries. |
+| [Codebase-Memory](https://arxiv.org/abs/2603.27277) (Vogel et al., 2026) | Tree-sitter knowledge graph + **MCP**; closest parallel. Aggregate quality 0.83 vs explorer 0.92, but graph wins hub/caller tasks on **19/31** langs. We add **Personalized** PPR and snippet extraction; they add **6-strategy call resolution**. |
+| [Reliable Graph-RAG for Codebases](https://arxiv.org/abs/2601.08773) (Chinthareddy, 2026) | AST-derived DKB vs LLM-KB vs No-Graph on Java repos (Shopizer, ThingsBoard, OpenMRS). **95.6% aggregate** for DKB, but **ties** No-Graph on ThingsBoard; validates bidirectional + interface expansion. |
 | *Practical Code RAG at Scale* (Galimzyanov et al., NeurIPS 2025) | Retrieval quality depends on **task type**; motivates separate tools (`get_impact` vs `get_context`) and a future hybrid intent router (graph vs lexical). |
 
 Deeper positioning, debates, and metrics: [`docs/RESEARCH.md`](docs/RESEARCH.md) · [`docs/LITERATURE_REVIEW.md`](docs/LITERATURE_REVIEW.md).
