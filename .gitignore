@@ -2,6 +2,8 @@
 __pycache__/
 .env
 venv*/
+.venv*/
+_pypi_smoke/
 *.pyc
 benchmark_results/
 .codegraph/
