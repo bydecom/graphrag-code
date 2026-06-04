@@ -17,20 +17,66 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -e .[dev]
-        
+
     - name: Run Tests
       env:
         PYTHONIOENCODING: utf-8
         PYTHONUTF8: 1
       run: |
         python -m unittest discover -s tests -v
+
+  smoke-install:
+    name: Wheel smoke install (${{ matrix.os }}, Py ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Build wheel and sdist
+      run: |
+        python -m pip install --upgrade pip build
+        python -m build
+
+    - name: Install wheel (clean, no editable)
+      shell: bash
+      run: |
+        python -m pip install dist/*.whl
+
+    - name: CLI entry points respond
+      shell: bash
+      run: |
+        graphrag-code-index --help
+        graphrag-code-export --help
+        python -c "from graphrag_code.mcp_server import main; print('mcp_server import OK')"
+
+    - name: Index package source (end-to-end)
+      shell: bash
+      env:
+        PYTHONIOENCODING: utf-8
+        PYTHONUTF8: 1
+      run: |
+        DB="${RUNNER_TEMP:-/tmp}/graphrag_smoke.sqlite"
+        graphrag-code-index --db "$DB" src
+        test -f "$DB"
+        graphrag-code-export --db "$DB" --out "${RUNNER_TEMP:-/tmp}/graph_export.json"
+        test -s "${RUNNER_TEMP:-/tmp}/graph_export.json"
