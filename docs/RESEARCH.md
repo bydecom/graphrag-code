@@ -82,16 +82,16 @@ Indexer notes for reproducibility: symbol rows are **deduplicated by FQN** (keep
 
 **Task: `blast_radius` · Precision@10** (15 seeds per package, post dedup; rounded to two decimals)
 
-| Arm | `requests` | `click` |
-|-----|------------|---------|
-| `uni_directional` (ablation) | 0.27 | 0.64 |
-| **`bi_directional` (shipped)** | **0.98** | **0.99** |
-| `brute_force` (1-hop) | 0.97 | 0.98 |
+| Arm | `requests` | `click` | `httpx` |
+|-----|------------|---------|---------|
+| `uni_directional` (ablation) | 0.27 | 0.64 | 0.65 |
+| **`bi_directional` (shipped)** | **0.98** | **0.99** | **0.98** |
+| `brute_force` (1-hop) | 0.97 | 0.98 | 0.99 |
 
 **Reading the table.**
 
 - **Bidirectional PPR matches** the 1-hop brute-force baseline on precision (~0.97–0.99) while ranking over the full graph (not limited to direct neighbours).
-- **Unidirectional PPR degrades sharply** (0.27 on `requests`, 0.64 on `click`): a forward-only retriever spends most of its top-k budget on **downstream** mass, not upstream callers — the empirical reason the backward pass is a **necessary** component for blast-radius mode (`get_impact`, `plan_change`), not decoration.
+- **Unidirectional PPR degrades sharply** (0.27 / 0.64 / 0.65 on `requests` / `click` / `httpx`): a forward-only retriever spends most of its top-k budget on **downstream** mass, not upstream callers — the empirical reason the backward pass is a **necessary** component for blast-radius mode (`get_impact`, `plan_change`), not decoration.
 - We state this **without overselling multi-hop recall**: a fair multi-hop baseline (e.g. BFS-depth-k) is future work; comparing recall only on hop ≥ 2 while brute_force is 1-hop would rig the comparison.
 
 The `dependencies` task is reported in harness output but **not headlined**: forward PPR is already strong downstream; bidirectional ties unidirectional on recall in the toy graph (§4.3) — the product differentiator is concentrated in **blast radius**.
@@ -125,13 +125,13 @@ Reproduce: `python eval_retrieval.py --codebase-dir src --task both --k "3,5,10"
 1. **Backward pass is necessary for blast radius.** Toy graph: `uni_directional` Recall = 0.000 at every k. Real packages: Precision@10 collapses to 0.27–0.64 while bidirectional holds ~0.98. Same mechanism, two scales of evidence.
 2. **Brute force is a strong but shallow baseline on precision.** It competes on Precision@10 because many relevant callers are 1-hop away; it still cannot rank multi-hop impact without expanding the neighbourhood blindly.
 3. **Honest null on dependencies.** Downstream retrieval does not require a heavy backward lean; bidirectional does not harm forward-dominated queries. Value of the second direction is **task-selective** (weight 0.9 vs 0.3), matching `get_impact` vs `get_context`.
-4. **Held-out cases (optional).** Auto-seeds favour high-degree hubs. For anti-cherry-pick audits, authors can fix `(symbol, task)` pairs in JSON/YAML (`--cases`) that are **not** required to match the auto-seed list. Example format: [`eval/cases/example.json`](../eval/cases/example.json).
+4. **Held-out cases.** Auto-seeds favour high-degree hubs. Fixed `(symbol, task)` pairs outside the top-15 auto-seed list: [`eval/cases/requests.json`](../eval/cases/requests.json), [`eval/cases/click.json`](../eval/cases/click.json), [`eval/cases/httpx.json`](../eval/cases/httpx.json) (8 cases each). On `blast_radius`, `uni_directional` still scores **0.000** recall@k on held-out seeds; `bi_directional` matches or exceeds the ablation — same mechanism as §4.2.
 
 ### 4.5 Threats to Validity & Limitations
 
 | Threat | Implication |
 |--------|-------------|
-| **Two packages so far** | `requests` and `click` validate the harness on real code; `httpx`, `fastapi`, and others are planned (see §5). Two repos + clear methodology are sufficient for a technical report; more repos strengthen generalisation claims. |
+| **Package count** | Headline Precision@10 on **`requests`**, **`click`**, **`httpx`** (§4.2). Three packages show the same pattern: `uni` ≈ 0.27–0.65, `bi` ≈ 0.98–0.99. More repos strengthen generalisation (see §5). |
 | **Recall@k vs closure size** | Ground truth = full transitive closure. On large graphs, a hub with hundreds of transitive callers caps Recall@10 mechanically — the metric tracks **closure size** as much as ranking quality. Hence **Precision@10** is the durable headline for blast radius. |
 | **Ground truth edge mix** | Closure includes `call`, `extends`, `import`, and `contains` edges. A call-only variant is planned. |
 | **Call resolution gap (vs. Codebase-Memory)** | Same limitation as [§3 — Call resolution gap](#3-trade-offs-and-limitations): Vogel et al. use a **6-strategy call-resolution cascade** (confidence 0.95→0.30), including LSP-style resolution for Go/C/C++. GraphRAG-Code uses **short_name matching** plus import heuristics. Cross-file calls via `obj.method()` (common in `requests`) may be missed or merged incorrectly — reported precision is therefore a **lower bound** under our resolver, not an upper bound. Future work: LSIF/SCIP-assisted edges (§3). |
@@ -141,15 +141,15 @@ Reproduce: `python eval_retrieval.py --codebase-dir src --task both --k "3,5,10"
 
 ### 4.6 Next Steps (RQ1 track)
 
-1. Add **held-out** `eval/cases/requests.json` and `eval/cases/click.json` (5–10 cases each, symbols off the auto-seed list).
-2. Run **`httpx`** (optional; stop if indexer debugging exceeds ~30 minutes).
+1. ~~Held-out case files (`requests`, `click`, `httpx`)~~ ✅
+2. ~~**`httpx`** in headline table~~ ✅
 3. **BM25** chunk baseline and **BFS-depth-k** multi-hop baseline (fair comparison, not hop≥2-only recall).
 4. Aggregate ≥5 repos for a preprint-grade table; until then, **§4.2 + README** are the single source of truth for headline numbers.
 
 ## 5. Evaluation Roadmap (Future Work)
 
-RQ1 structural retrieval (§4) is **underway**: precision@10 on `requests` and `click` is documented; expansion to more repos and baselines remains open.
+RQ1 structural retrieval (§4): precision@10 on **`requests`**, **`click`**, and **`httpx`** is documented; expansion to more repos and baselines remains open.
 
-1. **Rigor Benchmark:** Extend RQ1 (`eval_retrieval.py`) to $\ge$ 5–10 varied open-source Python repositories and aggregate (partial: 2/5+ done — see §4.2).
+1. **Rigor Benchmark:** Extend RQ1 (`eval_retrieval.py`) to $\ge$ 5–10 varied open-source Python repositories and aggregate (partial: **3/5+** done — see §4.2).
 2. **Baselines:** (A) 1-hop brute force ✅ · (B) Unidirectional PPR ablation ✅ · (C) BM25 chunking *(pending)* · (D) BFS-depth-k multi-hop *(pending, for fair multi-hop comparison)*.
 3. **Metrics:** Headline structural retrieval on **Precision@k** for blast radius; Token Savings, Latency, DRQ, and API Hallucination Rate for agent-facing studies — not CodeBLEU alone.

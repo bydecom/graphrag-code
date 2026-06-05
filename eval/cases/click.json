@@ -1,0 +1,46 @@
+{
+  "repo": "click (pallets/click)",
+  "note": "Held-out cases: seeds ranked outside the top-15 auto-select list per task. Run: python eval_retrieval.py --codebase-dir <click>/src/click --cases eval/cases/click.json",
+  "cases": [
+    {
+      "seed": "<module: shell_completion.py>::CompletionItem.__init__",
+      "task": "blast_radius",
+      "note": "rank 16 blast_radius; shell completion, not exception hub"
+    },
+    {
+      "seed": "<module: types.py>::StringParamType.convert",
+      "task": "blast_radius",
+      "note": "rank ~17; param type conversion"
+    },
+    {
+      "seed": "<module: types.py>::Path.convert",
+      "task": "blast_radius",
+      "note": "rank ~20; Path param conversion"
+    },
+    {
+      "seed": "<module: shell_completion.py>::ShellComplete.__init__",
+      "task": "blast_radius",
+      "note": "rank ~17; completion shell wrapper"
+    },
+    {
+      "seed": "<module: types.py>::FuncParamType",
+      "task": "dependencies",
+      "note": "rank 17 dependencies; callback param type"
+    },
+    {
+      "seed": "<module: types.py>::BoolParamType",
+      "task": "dependencies",
+      "note": "rank 20; bool param downstream"
+    },
+    {
+      "seed": "<module: _termui_impl.py>::_SkipClose",
+      "task": "dependencies",
+      "note": "rank 22; termui helper class"
+    },
+    {
+      "seed": "<module: _winconsole.py>::ConsoleStream",
+      "task": "dependencies",
+      "note": "rank 23; Windows console stream"
+    }
+  ]
+}

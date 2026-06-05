@@ -1,0 +1,46 @@
+{
+  "repo": "requests (pallets/requests)",
+  "note": "Held-out cases: seeds ranked outside the top-15 auto-select list per task. Run: python eval_retrieval.py --codebase-dir <requests>/src/requests --cases eval/cases/requests.json",
+  "cases": [
+    {
+      "seed": "<module: cookies.py>::extract_cookies_to_jar",
+      "task": "blast_radius",
+      "note": "rank ~18 blast_radius; cookie jar helper, not a top hub"
+    },
+    {
+      "seed": "<module: utils.py>::get_auth_from_url",
+      "task": "blast_radius",
+      "note": "rank ~21; URL auth parsing"
+    },
+    {
+      "seed": "<module: auth.py>::_basic_auth_str",
+      "task": "blast_radius",
+      "note": "rank ~22; internal auth helper"
+    },
+    {
+      "seed": "<module: models.py>::Request.__init__",
+      "task": "blast_radius",
+      "note": "rank ~27; model ctor, mid-tier callers"
+    },
+    {
+      "seed": "<module: sessions.py>::Session.prepare_request",
+      "task": "dependencies",
+      "note": "rank 16 dependencies; session prep chain"
+    },
+    {
+      "seed": "<module: utils.py>::resolve_proxies",
+      "task": "dependencies",
+      "note": "rank 17; proxy resolution downstream"
+    },
+    {
+      "seed": "<module: sessions.py>::Session.merge_environment_settings",
+      "task": "dependencies",
+      "note": "rank 18; env merge before send"
+    },
+    {
+      "seed": "<module: structures.py>::LookupDict",
+      "task": "dependencies",
+      "note": "rank 20; structure type callees"
+    }
+  ]
+}

@@ -26,13 +26,23 @@ Older, small-codebase numbers are **not** used as headline evidence anymore. The
 
 A reproducible, LLM-free retrieval eval ([`eval_retrieval.py`](eval_retrieval.py)) compares three arms against a graph-derived ground truth (transitive closure). The durable, repo-independent finding is on **precision** for blast-radius queries: a forward-only PageRank spends most of its budget on irrelevant nodes, while Bidirectional PPR stays sharp — empirical evidence that the backward pass is a **necessary** component, not decoration.
 
-| `blast_radius` · Precision@10 | `requests` | `click` |
-|-------------------------------|-----------|---------|
-| Unidirectional PPR (ablation) | 0.27 | 0.64 |
-| **Bidirectional PPR (ours)** | **0.98** | **0.99** |
-| Brute-force (1-hop) | 0.97 | 0.98 |
+| `blast_radius` · Precision@10 | `requests` | `click` | `httpx` |
+|-------------------------------|-----------|---------|---------|
+| Unidirectional PPR (ablation) | 0.27 | 0.64 | 0.65 |
+| **Bidirectional PPR (ours)** | **0.98** | **0.99** | **0.98** |
+| Brute-force (1-hop) | 0.97 | 0.98 | 0.99 |
 
-> Measured on the real `requests` and `click` packages (15 seeds each, post symbol-dedup). Bidirectional **matches** a naive 1-hop baseline on precision and **far exceeds** the single-direction ablation. We deliberately do **not** headline Recall@k: against a full transitive-closure ground truth it is dominated by closure size on large graphs (a hub with hundreds of transitive callers caps Recall@10 mechanically), so it measures hub size more than ranking quality. Reproduce: `python eval_retrieval.py --codebase-dir <pkg> --task blast_radius --k "3,5,10"`. Full methodology, mechanism illustration, and threats-to-validity: [`docs/RESEARCH.md` §4](docs/RESEARCH.md).
+> Measured on the real `requests`, `click`, and `httpx` packages (15 auto-seeds each, post symbol-dedup). Held-out case files (outside top-15 seeds): [`eval/cases/`](eval/cases/). Bidirectional **matches** a naive 1-hop baseline on precision and **far exceeds** the single-direction ablation. We deliberately do **not** headline Recall@k: against a full transitive-closure ground truth it is dominated by closure size on large graphs. Reproduce: `python eval_retrieval.py --codebase-dir <pkg> --task blast_radius --k "3,5,10"`. Full methodology: [`docs/RESEARCH.md` §4](docs/RESEARCH.md).
+
+### Install (PyPI)
+
+```bash
+pip install graphrag-code-core
+graphrag-code-index --db graphrag_code.sqlite src
+graphrag-code-mcp   # MCP stdio server (configure in Cursor / Claude Desktop)
+```
+
+Package name on PyPI is **`graphrag-code-core`** (repo: [graphrag-code](https://github.com/bydecom/graphrag-code)).
 
 ### 🔥 Core Differentiators:
 - **Bidirectional PPR Merge (two query modes):** An engineering extension of the Repo Map concept. It runs Forward PPR (downstream dependencies) and Backward PPR (on the reversed graph) as two independent passes, then merges them with a tunable `backward_weight`. The default `0.2` leans toward downstream implementation context, while `get_impact` raises it to `0.9` to surface upstream callers (blast radius). It is therefore **two weight-selected modes**, not one symmetric "see everything" query.
@@ -49,8 +59,7 @@ A reproducible, LLM-free retrieval eval ([`eval_retrieval.py`](eval_retrieval.py
 To run the pipeline natively using Python 3.10+:
 
 ```bash
-# Install from source
-pip install -e .
+# Install: PyPI (`pip install graphrag-code-core`) or from source (`pip install -e .`)
 
 # Parse the codebase and generate the Knowledge Graph
 graphrag-code-index --db graphrag_code.sqlite src

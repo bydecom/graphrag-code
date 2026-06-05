@@ -12,7 +12,7 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("graphrag-code-core")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.1.0"
+    __version__ = "0.1.1"
 
 # Initialize MCP Server with version metadata
 mcp = FastMCP(f"GraphRAG-Code_v{__version__}")

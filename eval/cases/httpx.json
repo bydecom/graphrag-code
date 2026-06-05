@@ -1,0 +1,46 @@
+{
+  "repo": "httpx (encode/httpx)",
+  "note": "Held-out cases: seeds ranked outside the top-15 auto-select list per task. Run: python eval_retrieval.py --codebase-dir <httpx>/httpx --cases eval/cases/httpx.json",
+  "cases": [
+    {
+      "seed": "<module: _decoders.py>::LineDecoder.decode",
+      "task": "blast_radius",
+      "note": "rank 16 blast_radius; decoder path, not exception hub"
+    },
+    {
+      "seed": "<module: _decoders.py>::IdentityDecoder.decode",
+      "task": "blast_radius",
+      "note": "rank ~24; identity decoder"
+    },
+    {
+      "seed": "<module: _decoders.py>::TextDecoder.flush",
+      "task": "blast_radius",
+      "note": "rank ~26; flush helper, mid-tier callers"
+    },
+    {
+      "seed": "<module: _decoders.py>::MultiDecoder.flush",
+      "task": "blast_radius",
+      "note": "rank ~28; multi-decoder flush"
+    },
+    {
+      "seed": "<module: _auth.py>::DigestAuth",
+      "task": "dependencies",
+      "note": "rank 17 dependencies; auth handler chain"
+    },
+    {
+      "seed": "<module: _client.py>::Client.__init__",
+      "task": "dependencies",
+      "note": "rank 15-16; sync client setup"
+    },
+    {
+      "seed": "<module: _client.py>::AsyncClient.__init__",
+      "task": "dependencies",
+      "note": "rank 15-16; async client setup"
+    },
+    {
+      "seed": "<module: _config.py>::Timeout",
+      "task": "dependencies",
+      "note": "rank 18; config object callees"
+    }
+  ]
+}
