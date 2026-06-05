@@ -21,6 +21,10 @@ def export_to_json(db_path="graphrag_code.sqlite", out_path="graph_data.json"):
         elif kind == 'class':
             group = 'class'
             label = f"📦 {name}"
+        elif kind == 'route':
+            group = 'route'
+            route_label = name.split('::')[-1] if '::' in name else name
+            label = f"🌐 {route_label}"
         else:
             group = 'function'
             label = f"⚙️ {name}\n({file_name})"
@@ -41,14 +45,17 @@ def export_to_json(db_path="graphrag_code.sqlite", out_path="graph_data.json"):
             "to": tgt_id,
             "label": edge_type,
             "arrows": "to",
-            "color": {"color": "#ff5722" if edge_type == 'import' else "#2196f3"}
+            "color": {"color": {
+                "import": "#ff5722",
+                "handles": "#ab47bc",
+            }.get(edge_type, "#2196f3")}
         })
         
     graph_data = {"nodes": nodes, "edges": edges}
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(graph_data, f, ensure_ascii=False, indent=2)
         
-    print(f"✅ Successfully exported {len(nodes)} nodes and {len(edges)} edges to {out_path}!")
+    print(f"Successfully exported {len(nodes)} nodes and {len(edges)} edges to {out_path}!")
     conn.close()
 
 def main():

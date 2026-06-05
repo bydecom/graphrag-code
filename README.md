@@ -48,7 +48,8 @@ Package name on PyPI is **`graphrag-code-core`** (repo: [graphrag-code](https://
 - **Bidirectional PPR Merge (two query modes):** An engineering extension of the Repo Map concept. It runs Forward PPR (downstream dependencies) and Backward PPR (on the reversed graph) as two independent passes, then merges them with a tunable `backward_weight`. The default `0.2` leans toward downstream implementation context, while `get_impact` raises it to `0.9` to surface upstream callers (blast radius). It is therefore **two weight-selected modes**, not one symmetric "see everything" query.
 - **Source Code Block Extraction:** Injects exact code blocks (snippets) into the LLM context using AST coordinates rather than just spitting out symbol metadata.
 - **Interface Expansion (P0-2):** Traversing interface boundaries automatically via inheritance/dependency mapping (e.g., tracking consumers of implemented classes).
-- **Orphan / Dead-Code Detection:** Because edges are derived purely from real `import`, `call`, and `contains` relationships, modules and classes that nothing references stay disconnected from the main graph. A class that floats alone is the graph honestly telling you it is never imported or instantiated anywhere — a free static smell-detector for dead or dynamically-invoked code.
+- **Orphan / Dead-Code Detection:** Because edges are derived purely from real `import`, `call`, `contains`, and `handles` (route→handler) relationships, modules and classes that nothing references stay disconnected from the main graph. A class that floats alone is the graph honestly telling you it is never imported or instantiated anywhere — a free static smell-detector for dead or dynamically-invoked code.
+- **Route Semantic Edges:** Flask/FastAPI-style decorators (`@app.route`, `@app.get`, …) become first-class **route nodes** linked to their handler via `handles` edges — visible in the graph export as purple diamonds (e.g. `route:/users` → `get_users`).
 - **Python-Native:** Highly optimized for the Python ecosystem (FastAPI, Django, Data Science).
 - **Zero-Ops MCP Server:** Complies with the Model Context Protocol (MCP). Plugs directly into **Cursor** or **Claude Desktop** in seconds.
 
@@ -108,6 +109,7 @@ The system utilizes `tree-sitter` to parse Python files into a graph of syntax n
 **Color Legend (Node Types):**
 - 🟢 **Green (Ellipse):** `File / Module` (e.g., `main.py`)
 - 🔵 **Blue (Box):** `Class` (e.g., `FullScreenApp`, `AppMenu`)
+- 🟣 **Purple (Diamond):** `HTTP Route` (e.g., `route:/users`, `GET /items`) — Flask/FastAPI decorators
 - ⚫ **Dark Grey (Box):** `Function / Method` (e.g., `__init__`, `create_widgets`)
 
 **How to generate and view this interactive graph locally:**
@@ -147,8 +149,35 @@ Developed primarily in [Cursor](https://cursor.com). Architecture, evaluation de
 
 ---
 
-## ⚠️ Known Limitations
-- Currently, GraphRAG-Code natively supports Python codebases (multi-language support is planned for future releases).
-- **Latency overhead of ~20-25% on tiny codebases** (<20 files) due to MCP initialization and in-memory graph loading. This is compensated by massive performance gains and token savings on larger codebases.
-- Heuristics for private methods (beginning with `_`) are undergoing active refinement.
-- Dynamic import, decorator, and metaclass analysis are not fully resolved at the AST syntax level without static type resolution.
+## ⚠️ Handled vs Open Limitations
+
+GraphRAG-Code uses **assignment-based heuristics**, not a full type checker. That is intentional — full resolution is what LSP/LSIF is for (planned Phase 2). What we handle today vs what we honestly do not:
+
+### ✅ Handled today (static AST heuristics)
+
+| Capability | Example | How |
+|------------|---------|-----|
+| **Assignment-based call disambiguation** | `session = Session(); session.send()` | Maps variable → constructor class per scope; edge targets `Session.send` instead of every `send` in the repo |
+| **`self` / `cls` method calls** | `self.validate()` inside `class Session` | Resolves to `Session.validate` via enclosing class context |
+| **Flask / FastAPI route decorators** | `@app.route("/users")`, `@app.get("/items")` | Creates route nodes (`route:/users`, `GET /items`) with `handles` → handler function |
+| **Structural edges** | `import`, `call`, `extends`, `contains` | Tree-sitter capture + cross-file import gate in `resolved_edges` |
+| **Ambiguous symbol safety** | Two `validate()` in different files | MCP tools return a disambiguation list instead of silently guessing |
+
+### ❌ Not handled (falls back to bare method name or no edge)
+
+| Gap | Example | Why |
+|-----|---------|-----|
+| **`self.attr` chains** | `self.adapter.send()` after `self.adapter = HTTPAdapter()` in `__init__` | No instance-attribute type map yet |
+| **Import aliases** | `from requests import Session as S; s = S(); s.send()` | Constructor tracked as `S`, not resolved to `Session` |
+| **Chained call return types** | `client.get_session().send()` | Needs return-type inference |
+| **Conditional / multi-path assignment** | `if x: s = A() else: s = B()` | Needs flow analysis |
+| **Untyped parameters** | `def process(session): session.send()` | Needs annotations or call-site analysis |
+| **Tuple/list unpacking** | `session, _ = Session(), Adapter()` | Assignment LHS not a simple identifier |
+| **Dynamic dispatch** | `getattr(obj, "send")()`, `__getattr__`, metaclasses | Runtime-only; out of scope for syntax-level indexing |
+| **Generic decorators** | `@login_required`, `@cache`, custom wrappers | Only HTTP route patterns are recognized |
+
+### Other known limits
+
+- **Python-only** for now (multi-language planned).
+- **~20–25% latency overhead** on tiny codebases (<20 files) from MCP init + in-memory graph load; pays off on larger repos.
+- **Private-method heuristics** (`_` prefix) are still being refined.

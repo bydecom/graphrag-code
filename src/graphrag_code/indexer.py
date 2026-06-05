@@ -63,6 +63,11 @@ def init_db(db_path="graphrag_code.sqlite"):
         INNER JOIN symbols s ON (
             e.target_name = s.short_name 
             OR (s.kind = 'module' AND s.short_name = '<module: ' || e.target_name || '.py>')
+            OR (
+                e.edge_type = 'call'
+                AND INSTR(e.target_name, '.') > 0
+                AND (s.name LIKE '%::' || e.target_name OR s.name LIKE '%.' || e.target_name)
+            )
         )
         INNER JOIN symbols src ON e.source_id = src.id
         INNER JOIN files target_file ON s.file_id = target_file.id
@@ -75,6 +80,10 @@ def init_db(db_path="graphrag_code.sqlite"):
                  AND e_imp.edge_type = 'import'
                  AND (
                      e_imp.target_name = e.target_name
+                     OR (
+                         INSTR(e.target_name, '.') > 0
+                         AND e_imp.target_name = SUBSTR(e.target_name, 1, INSTR(e.target_name, '.') - 1)
+                     )
                      OR target_file.file_path LIKE '%' || REPLACE(e_imp.target_name, '.', '/') || '%'
                  )
            )
@@ -127,6 +136,229 @@ def find_enclosing_symbol(node, source_code: bytes, module_name: str) -> str:
                     return get_fqn(child, source_code, module_name)
         curr = curr.parent
     return module_name
+
+def _node_text(node, source_code: bytes) -> str:
+    return source_code[node.start_byte:node.end_byte].decode('utf8')
+
+def find_enclosing_class_short_name(node, source_code: bytes) -> str | None:
+    """Return the short class name enclosing this node, if any."""
+    curr = node.parent
+    while curr is not None:
+        if curr.type == 'class_definition':
+            for child in curr.children:
+                if child.type == 'identifier':
+                    return _node_text(child, source_code)
+            return None
+        curr = curr.parent
+    return None
+
+def _extract_lhs_var_name(left_node, source_code: bytes) -> str | None:
+    if left_node is None:
+        return None
+    if left_node.type == 'identifier':
+        return _node_text(left_node, source_code)
+    return None
+
+def _extract_call_constructor_name(call_node, source_code: bytes) -> str | None:
+    """Extract class name from `ClassName(...)` or `module.ClassName(...)`."""
+    func = call_node.child_by_field_name('function')
+    if func is None:
+        return None
+    if func.type == 'identifier':
+        return _node_text(func, source_code)
+    if func.type == 'attribute':
+        attr = func.child_by_field_name('attribute')
+        if attr is not None:
+            return _node_text(attr, source_code)
+    return None
+
+def build_variable_type_maps(root_node, source_code: bytes, module_name: str) -> dict[str, dict[str, str]]:
+    """
+    Pass 0: assignment-based heuristic — map variable names to constructor class
+    names within each enclosing scope. Example: session = Session() in func f
+    yields maps['<module: foo.py>::f']['session'] = 'Session'.
+    """
+    scope_maps: dict[str, dict[str, str]] = {}
+
+    def visit(node):
+        if node.type in ('assignment', 'annotated_assignment'):
+            left = node.child_by_field_name('left')
+            right = node.child_by_field_name('right')
+            if left is not None and right is not None and right.type == 'call':
+                var_name = _extract_lhs_var_name(left, source_code)
+                class_name = _extract_call_constructor_name(right, source_code)
+                if var_name and class_name:
+                    scope = find_enclosing_symbol(node, source_code, module_name)
+                    scope_maps.setdefault(scope, {})[var_name] = class_name
+        for child in node.children:
+            visit(child)
+
+    visit(root_node)
+    return scope_maps
+
+ROUTE_DECORATOR_METHODS = frozenset({
+    'route', 'get', 'post', 'put', 'delete', 'patch', 'head', 'options',
+    'trace', 'websocket', 'api_route', 'add_url_rule',
+})
+
+def _strip_python_string(text: str) -> str:
+    if len(text) >= 2 and text[0] in ('"', "'") and text[-1] == text[0]:
+        return text[1:-1]
+    return text
+
+def _first_string_literal_in_args(call_node, source_code: bytes) -> str | None:
+    args = call_node.child_by_field_name('arguments')
+    if args is None:
+        return None
+    for child in args.children:
+        if child.type == 'string':
+            return _strip_python_string(_node_text(child, source_code))
+        if child.type == 'concatenated_string':
+            for part in child.children:
+                if part.type == 'string':
+                    return _strip_python_string(_node_text(part, source_code))
+    return None
+
+def _decorator_http_method(call_node, source_code: bytes) -> str | None:
+    func = call_node.child_by_field_name('function')
+    if func is None or func.type != 'attribute':
+        return None
+    attr = func.child_by_field_name('attribute')
+    return _node_text(attr, source_code) if attr is not None else None
+
+def _format_route_short_name(method: str, path: str) -> str:
+    if method == 'route':
+        return f"route:{path}"
+    return f"{method.upper()} {path}"
+
+def _decorator_call_from_node(decorator_node) -> object | None:
+    for child in decorator_node.children:
+        if child.type == 'call':
+            return child
+    return None
+
+def index_route_decorators(
+    root_node,
+    source_code: bytes,
+    module_name: str,
+    symbol_map: dict,
+    file_id: int,
+    module_id: int,
+    cursor,
+) -> None:
+    """
+    Detect Flask/FastAPI-style route decorators and wire semantic edges:
+      route:/users --handles--> get_users
+      GET /items   --handles--> list_items
+    """
+    route_symbol_ids: dict[str, int] = {}
+
+    def _wire_route_decorators(decorator_nodes, func_node) -> None:
+        name_node = func_node.child_by_field_name('name')
+        if name_node is None:
+            return
+        handler_short = _node_text(name_node, source_code)
+        handler_fqn = get_fqn(name_node, source_code, module_name)
+        if handler_fqn not in symbol_map:
+            return
+
+        start_line = getattr(func_node.start_point, 'row', None)
+        if start_line is None:
+            start_line = func_node.start_point[0]
+        end_line = getattr(func_node.end_point, 'row', None)
+        if end_line is None:
+            end_line = func_node.end_point[0]
+
+        for decorator_node in decorator_nodes:
+            call_expr = _decorator_call_from_node(decorator_node)
+            if call_expr is None:
+                continue
+            method = _decorator_http_method(call_expr, source_code)
+            if method not in ROUTE_DECORATOR_METHODS:
+                continue
+            path = _first_string_literal_in_args(call_expr, source_code)
+            if not path:
+                continue
+
+            route_short = _format_route_short_name(method, path)
+            route_fqn = f"{module_name}::{route_short}"
+            if route_short not in route_symbol_ids:
+                cursor.execute(
+                    "INSERT INTO symbols (file_id, name, short_name, kind, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?)",
+                    (file_id, route_fqn, route_short, 'route', start_line, end_line),
+                )
+                route_id = cursor.lastrowid
+                route_symbol_ids[route_short] = route_id
+                symbol_map[route_fqn] = route_id
+                logging.info(f"  [+] Node: Route '{route_fqn}' (ID: {route_id})")
+                cursor.execute(
+                    "INSERT OR IGNORE INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
+                    (module_id, route_short, 'contains'),
+                )
+                logging.info(f"  [->] Edge: '{module_name}' contains route '{route_fqn}'")
+
+            route_id = route_symbol_ids[route_short]
+            cursor.execute(
+                "INSERT OR IGNORE INTO edges (source_id, target_name, edge_type) VALUES (?, ?, ?)",
+                (route_id, handler_short, 'handles'),
+            )
+            logging.info(f"  [->] Edge: '{route_fqn}' --[handles]--> '{handler_short}'")
+
+    def visit(node):
+        if node.type == 'decorated_definition':
+            decorator_nodes = [child for child in node.children if child.type == 'decorator']
+            func_node = next((child for child in node.children if child.type == 'function_definition'), None)
+            if func_node is not None and decorator_nodes:
+                _wire_route_decorators(decorator_nodes, func_node)
+        elif node.type == 'function_definition':
+            decorator_nodes = []
+            for child in node.children:
+                if child.type == 'decorator':
+                    decorator_nodes.append(child)
+                elif child.type == 'def':
+                    break
+            if decorator_nodes:
+                _wire_route_decorators(decorator_nodes, node)
+
+        for child in node.children:
+            visit(child)
+
+    visit(root_node)
+
+def resolve_call_target(
+    node,
+    source_code: bytes,
+    module_name: str,
+    var_type_maps: dict[str, dict[str, str]],
+) -> str:
+    """
+    Resolve a call edge target using assignment-based and self/cls heuristics.
+    Falls back to the bare method/function name when type is unknown.
+    """
+    parent = node.parent
+    if parent is not None and parent.type == 'attribute':
+        method_name = _node_text(node, source_code)
+        obj_node = parent.child_by_field_name('object')
+        if obj_node is None:
+            return method_name
+
+        obj_name = _node_text(obj_node, source_code)
+        if obj_name in ('self', 'cls'):
+            class_name = find_enclosing_class_short_name(node, source_code)
+            if class_name:
+                return f"{class_name}.{method_name}"
+            return method_name
+
+        scope = find_enclosing_symbol(node, source_code, module_name)
+        resolved_class = var_type_maps.get(scope, {}).get(obj_name)
+        if resolved_class:
+            return f"{resolved_class}.{method_name}"
+        return method_name
+
+    target_name = _node_text(node, source_code)
+    if '.' in target_name:
+        return target_name.split('.')[-1]
+    return target_name
 
 def parse_python_file(file_path, conn):
     try:
@@ -246,13 +478,18 @@ def parse_python_file(file_path, conn):
 
     BUILTIN_IGNORE = {'print', 'len', 'range', 'str', 'int', 'list', 'dict', 'isinstance', 'type', 'super', 'enumerate', 'zip'}
 
+    var_type_maps = build_variable_type_maps(tree.root_node, source_code, module_name)
+
     # 4. Second Pass: Store all Edges (call, import, extends) with Context Tracking
     for node, capture_name in capture_items:
         if capture_name in ('edge.call', 'edge.import', 'edge.extends'):
-            target_name = source_code[node.start_byte:node.end_byte].decode('utf8')
-            if '.' in target_name:
-                target_name = target_name.split('.')[-1]
-                
+            if capture_name == 'edge.call':
+                target_name = resolve_call_target(node, source_code, module_name, var_type_maps)
+            else:
+                target_name = _node_text(node, source_code)
+                if '.' in target_name:
+                    target_name = target_name.split('.')[-1]
+
             edge_type = capture_name.split('.')[1]  # 'call', 'import', or 'extends'
             
             # Filter out standard builtin functions
@@ -270,6 +507,16 @@ def parse_python_file(file_path, conn):
                     (source_id, target_name, edge_type)
                 )
                 logging.info(f"  [->] Edge: '{caller_name}' --[{edge_type}]--> '{target_name}'")
+
+    index_route_decorators(
+        tree.root_node,
+        source_code,
+        module_name,
+        symbol_map,
+        file_id,
+        symbol_map[module_name],
+        cursor,
+    )
 
     conn.commit()
     logging.info(f"✅ Successfully saved '{file_path}' to SQLite!\n")
