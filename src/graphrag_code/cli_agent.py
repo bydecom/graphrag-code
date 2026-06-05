@@ -2,23 +2,63 @@ import asyncio
 import sys
 import os
 import json
+import sqlite3
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 import litellm
+from dotenv import load_dotenv
+
+def _describe_indexed_graph(db_path: str) -> str:
+    """Human-readable summary of what is loaded — shown at startup for transparency."""
+    if not os.path.exists(db_path):
+        return f"[!] No index at `{db_path}` — run the indexer first."
+    conn = sqlite3.connect(db_path)
+    file_count = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
+    sym_count = conn.execute("SELECT COUNT(*) FROM symbols WHERE kind != 'module'").fetchone()[0]
+    edge_count = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
+    sample_paths = [row[0] for row in conn.execute("SELECT file_path FROM files LIMIT 3").fetchall()]
+    conn.close()
+
+    # Infer codebase label from indexed paths (e.g. .../click/src/click/core.py → click)
+    codebase = "unknown"
+    for path in sample_paths:
+        parts = path.replace("\\", "/").split("/")
+        for i, part in enumerate(parts):
+            if part == "src" and i + 1 < len(parts):
+                codebase = parts[i + 1]
+                break
+        if codebase != "unknown":
+            break
+
+    lines = [
+        f"  DB:        {os.path.abspath(db_path)}",
+        f"  Codebase:  {codebase} ({file_count} files, {sym_count} symbols, {edge_count} edges)",
+    ]
+    if sample_paths:
+        lines.append(f"  Sample:    {os.path.basename(sample_paths[0])} …")
+    return "\n".join(lines)
+
+def _preview_tool_result(text: str, max_lines: int = 18) -> str:
+    """Truncate tool output for terminal display (screenshot-friendly)."""
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text
+    return "\n".join(lines[:max_lines]) + f"\n  … ({len(lines) - max_lines} more lines)"
 
 async def run_cli_agent():
+    load_dotenv()
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print("[!] Error: Please set the GEMINI_API_KEY environment variable before running.")
-        print("    In CMD: set GEMINI_API_KEY=AIzaSy...")
-        print("    In Powershell: $env:GEMINI_API_KEY=\"AIzaSy...\"")
+        print("[!] Error: GEMINI_API_KEY not found.")
+        print("    Add it to .env in the graphrag-code folder (see .env.example).")
         return
         
     print("[🤖 GraphRAG-Code Agent] Booting up 'The People's Agent'...")
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
-    env["GRAPHRAG_CODE_DB"] = os.environ.get("GRAPHRAG_CODE_DB") or os.environ.get("CODEGRAPH_DB", "graphrag_code.sqlite")
+    db_path = os.environ.get("GRAPHRAG_CODE_DB") or os.environ.get("CODEGRAPH_DB", "graphrag_code.sqlite")
+    env["GRAPHRAG_CODE_DB"] = db_path
 
     server_params = StdioServerParameters(
         command=sys.executable,
@@ -56,7 +96,9 @@ async def run_cli_agent():
                         "3. For deep analysis / to read actual code: use 'get_context' (360° view: callers + source + deps).\n"
                         "4. For the full blast-radius table only: use 'get_impact'.\n"
                         "5. For broad context across multiple related symbols: use 'get_pruned_context'.\n"
-                        "Never edit code without first calling plan_change. Never guess dependencies."
+                        "Never edit code without first calling plan_change. Never guess dependencies.\n"
+                        "If asked what codebase you are on, you MUST call list_symbols and cite real\n"
+                        "file paths from the tool result — never answer from general knowledge."
                     )
                 }
             ]
@@ -64,7 +106,15 @@ async def run_cli_agent():
             print("="*60)
             print("🚀 WELCOME TO GRAPHRAG-CODE CLI AGENT (Powered by Gemini) 🚀")
             print("="*60)
-            print(" Type 'exit' or 'q' to quit. Start chatting with the Agent about your project.\n")
+            print("[📂 Indexed Graph]")
+            print(_describe_indexed_graph(db_path))
+            print()
+            print(" Screenshot demo prompts (copy-paste):")
+            print("  1) Gọi plan_change cho Command.invoke — blast radius trước khi sửa")
+            print("  2) Gọi list_symbols file_path core.py — liệt kê class/function")
+            print("  3) Nếu sửa invoke, dùng get_impact để xem ai bị ảnh hưởng")
+            print()
+            print(" Type 'exit' or 'q' to quit.\n")
             
             while True:
                 try:
@@ -100,6 +150,9 @@ async def run_cli_agent():
                                 # Communicate via the real MCP protocol down to the Graph Engine
                                 tool_result = await session.call_tool(func_name, arguments=args)
                                 result_text = "\n".join([c.text for c in tool_result.content if c.type == "text"])
+                                preview = _preview_tool_result(result_text)
+                                if preview.strip():
+                                    print(f"  [📊 Graph Result]:\n{preview}\n")
                                 
                                 messages.append({
                                     "role": "tool",
