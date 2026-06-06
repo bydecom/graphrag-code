@@ -141,6 +141,8 @@ Work directly relevant to this problem:
 
 Deeper positioning, debates, and metrics: [`docs/RESEARCH.md`](docs/RESEARCH.md) · [`docs/LITERATURE_REVIEW.md`](docs/LITERATURE_REVIEW.md).
 
+**Sibling project:** [Medical Citation Agent](https://github.com/bydecom/medical-citation-agent) — same Deterministic-First + MCP pattern applied to FDA drug-label claim extraction with verifiable citations.
+
 ---
 
 ## Acknowledgments
